@@ -44,6 +44,9 @@ export default async function SignInPage({
           We ask for read-only access to your Google Calendar. If you plan in Notion Calendar, connect the same
           Google account there and your time blocks show up here automatically.
         </p>
+        <a href="/privacy" className="block text-xs text-muted underline">
+          Privacy policy
+        </a>
       </div>
     </main>
   );

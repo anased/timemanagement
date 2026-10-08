@@ -24,8 +24,8 @@ export default {
   session: { strategy: "jwt" },
   callbacks: {
     authorized({ auth, request }) {
-      const isSignIn = request.nextUrl.pathname.startsWith("/signin");
-      if (isSignIn) return true;
+      const { pathname } = request.nextUrl;
+      if (pathname.startsWith("/signin") || pathname.startsWith("/privacy")) return true;
       return !!auth?.user;
     },
     session({ session, token }) {
