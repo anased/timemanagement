@@ -3,8 +3,10 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  /// Non-pooled connection used for migrations (Neon's pooled URL can't run them)
+  directUrl = env("DATABASE_URL_UNPOOLED")
 }
 
 // ---------- Auth.js tables ----------

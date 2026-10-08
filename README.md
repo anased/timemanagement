@@ -75,11 +75,8 @@ DATABASE_URL=postgresql://postgres:postgres@localhost:5432/timemanagement_test n
 # in .env: TEST_DATABASE_URL="postgresql://postgres:postgres@localhost:5432/timemanagement_test"
 ```
 
-## Deploy (Vercel + hosted Postgres)
+## Deploy (Vercel + Neon)
 
-1. Create a Postgres database (Neon, Supabase, Vercel Postgres…) and copy its connection string.
-2. Import the repo in Vercel and set `DATABASE_URL`, `AUTH_SECRET`, `AUTH_GOOGLE_ID` and `AUTH_GOOGLE_SECRET`.
-3. Set the build command to `npx prisma migrate deploy && npm run build`.
-4. Add the production callback URL to your Google OAuth client.
+Step-by-step instructions, including Google Cloud setup, are in **[DEPLOY.md](DEPLOY.md)**. In short: import the repo in Vercel, add a Neon database from Vercel's Storage tab (this sets `DATABASE_URL` and `DATABASE_URL_UNPOOLED`), and set `AUTH_SECRET`, `AUTH_GOOGLE_ID` and `AUTH_GOOGLE_SECRET`. The `vercel-build` script runs the database migrations on every deploy.
 
 If you self-host with `npm start`, also set `AUTH_TRUST_HOST=true`.
