@@ -21,13 +21,17 @@ model User {
   updatedAt     DateTime  @updatedAt
 
   // Preferences
-  timeZone    String @default("UTC")
+  timeZone         String  @default("UTC")
   /// Start of the tracked day window, minutes after local midnight (default 07:00)
-  dayStartMin Int    @default(420)
+  dayStartMin      Int     @default(420)
   /// End of the tracked day window, minutes after local midnight (default 22:00)
-  dayEndMin   Int    @default(1320)
+  dayEndMin        Int     @default(1320)
   /// Free slots shorter than this are ignored
-  minGapMin   Int    @default(15)
+  minGapMin        Int     @default(15)
+  /// Google calendar this app created for finished tasks ("Actual time")
+  actualCalendarId String?
+  /// Copy finished entries to the "Actual time" calendar
+  syncToCalendar   Boolean @default(true)
 
   accounts           Account[]
   sessions           Session[]
@@ -113,6 +117,9 @@ model TimeEntry {
   plannedTitle   String?
   plannedStart   DateTime?
   plannedEnd     DateTime?
+
+  /// Event in the user's "Actual time" Google calendar mirroring this entry
+  googleEventId String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

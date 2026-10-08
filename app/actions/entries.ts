@@ -1,7 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { z } from "zod";
+import { syncEntry, unsyncEntry } from "@/lib/calendar-sync";
+import { getPlannedEvents } from "@/lib/google-calendar";
 import { currentScope } from "@/lib/session";
 import { fromLocalInput } from "@/lib/time";
 import { run, type ActionResult } from "./result";
@@ -31,7 +34,13 @@ export async function startTimer(input: z.input<typeof startTimerSchema>): Promi
   return run(async () => {
     const data = startTimerSchema.parse(input);
     const scope = await currentScope();
-    await scope.timer.start({ title: data.title, categoryId: data.categoryId ?? null, ...plannedFields(data.planned) });
+    const { stoppedId } = await scope.timer.start({
+      title: data.title,
+      categoryId: data.categoryId ?? null,
+      ...plannedFields(data.planned),
+    });
+    // Switching tasks finishes the previous one, so it goes to the calendar too.
+    if (stoppedId) after(() => syncEntry(scope.userId, stoppedId));
     revalidatePath("/", "layout");
   });
 }
@@ -39,9 +48,70 @@ export async function startTimer(input: z.input<typeof startTimerSchema>): Promi
 export async function stopTimer(): Promise<ActionResult> {
   return run(async () => {
     const scope = await currentScope();
-    await scope.timer.stop();
+    const stopped = await scope.timer.stop();
+    if (stopped) after(() => syncEntry(scope.userId, stopped.id));
     revalidatePath("/", "layout");
   });
+}
+
+const finishSchema = z.object({
+  title,
+  categoryId,
+  note: z.string().max(2000).nullish(),
+  /** undefined = keep the current link */
+  planned,
+  /** only sent when the user changed them */
+  start: localDateTime.optional(),
+  end: localDateTime.optional(),
+});
+
+/** "Done": completes the running timer with its final details and adds it to the calendar. */
+export async function finishTimer(input: z.input<typeof finishSchema>): Promise<ActionResult> {
+  return run(async () => {
+    const data = finishSchema.parse(input);
+    const scope = await currentScope();
+    const { timeZone } = await scope.settings.get();
+    const id = await scope.timer.finish(
+      {
+        title: data.title,
+        categoryId: data.categoryId ?? null,
+        note: data.note || null,
+        ...(data.planned === undefined ? {} : plannedFields(data.planned)),
+        ...(data.start ? { start: fromLocalInput(data.start, timeZone) } : {}),
+      },
+      data.end ? fromLocalInput(data.end, timeZone) : undefined,
+    );
+    after(() => syncEntry(scope.userId, id));
+    revalidatePath("/", "layout");
+  });
+}
+
+export async function discardTimer(): Promise<ActionResult> {
+  return run(async () => {
+    const scope = await currentScope();
+    await scope.timer.discard();
+    revalidatePath("/", "layout");
+  });
+}
+
+export interface TaskSuggestions {
+  /** planned blocks happening around now */
+  current: { id: string; title: string; start: Date; end: Date }[];
+  recent: string[];
+}
+
+/** Suggestions for the New task / Done panels: current planned blocks and recent task names. */
+export async function getTaskSuggestions(): Promise<TaskSuggestions> {
+  const scope = await currentScope();
+  const now = Date.now();
+  const [planned, recent] = await Promise.all([
+    getPlannedEvents(scope.userId, new Date(now - 15 * 60_000), new Date(now + 15 * 60_000)),
+    scope.entries.recentTitles(6),
+  ]);
+  return {
+    current: planned.events.map((e) => ({ id: e.id, title: e.title, start: e.start, end: e.end })),
+    recent,
+  };
 }
 
 const entrySchema = z.object({
@@ -71,14 +141,17 @@ export async function saveEntry(input: z.input<typeof entrySchema>): Promise<Act
       // On edit, an omitted `planned` keeps the existing link.
       ...(data.planned === undefined && data.id ? {} : plannedFields(data.planned)),
     };
-    if (data.id) {
-      const existing = await scope.entries.get(data.id);
+    let id = data.id;
+    if (id) {
+      const existing = await scope.entries.get(id);
       if (end === null && existing?.end !== null) throw new Error("End must be after start");
-      await scope.entries.update(data.id, fields);
+      await scope.entries.update(id, fields);
     } else {
       if (end === null) throw new Error("End must be after start");
-      await scope.entries.create({ ...fields, source: "MANUAL" });
+      id = (await scope.entries.create({ ...fields, source: "MANUAL" })).id;
     }
+    const savedId = id;
+    after(() => syncEntry(scope.userId, savedId));
     revalidatePath("/", "layout");
   });
 }
@@ -86,7 +159,8 @@ export async function saveEntry(input: z.input<typeof entrySchema>): Promise<Act
 export async function deleteEntry(id: string): Promise<ActionResult> {
   return run(async () => {
     const scope = await currentScope();
-    await scope.entries.remove(z.string().min(1).parse(id));
+    const removed = await scope.entries.remove(z.string().min(1).parse(id));
+    after(() => unsyncEntry(scope.userId, removed.googleEventId));
     revalidatePath("/", "layout");
   });
 }

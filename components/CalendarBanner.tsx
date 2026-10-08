@@ -26,3 +26,25 @@ export function CalendarBanner({ result }: { result: PlannedResult }) {
     </div>
   );
 }
+
+/** Asks once for the extra permission needed to add finished tasks to Google Calendar. */
+export function WriteAccessBanner() {
+  return (
+    <div className="mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-accent/30 bg-accent/5 px-4 py-3 text-sm">
+      <span className="flex-1">
+        Want finished tasks added to an <strong>&ldquo;Actual time&rdquo;</strong> calendar in Google (and Notion
+        Calendar)? Allow one more permission. Your planning calendars are never changed.
+      </span>
+      <form
+        action={async () => {
+          "use server";
+          await signIn("google", { redirectTo: "/" });
+        }}
+      >
+        <button className="btn" type="submit">
+          Allow
+        </button>
+      </form>
+    </div>
+  );
+}

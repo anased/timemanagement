@@ -39,7 +39,11 @@ This automatically adds `DATABASE_URL` and `DATABASE_URL_UNPOOLED` to your proje
    - App name: `Time tracker`. User support email: your email.
    - Audience: **External**.
    - Contact email: your email. Agree to the policy and click **Create**.
-5. **Scopes.** Go to **Data Access → Add or remove scopes**. Search for `calendar.readonly`, tick **…/auth/calendar.readonly**, then click **Update** and **Save**.
+5. **Scopes.** Go to **Data Access → Add or remove scopes** and add both of these:
+   - `calendar.readonly`: tick **…/auth/calendar.readonly** (read your plan).
+   - `calendar.app.created`: tick **…/auth/calendar.app.created** (lets the app create its own **"Actual time"** calendar and add your finished tasks there; it can't touch your other calendars).
+
+   If a scope isn't listed, paste the full address under **Manually add scopes**: `https://www.googleapis.com/auth/calendar.readonly` and `https://www.googleapis.com/auth/calendar.app.created`. Click **Update**, then **Save**.
 6. **Publish the app.** Go to **Audience** and click **Publish app → Confirm**.
    - **Why this matters:** while the app is in *Testing*, Google cuts off calendar access every 7 days and you'd have to reconnect each week.
    - You don't need to submit it for Google's review for personal use. When you sign in, Google shows a "Google hasn't verified this app" screen. Click **Advanced → Go to Time tracker (unsafe)**. It's your own app, so this is fine.
@@ -81,6 +85,8 @@ This automatically adds `DATABASE_URL` and `DATABASE_URL_UNPOOLED` to your proje
 |---|---|
 | Google says **`redirect_uri_mismatch`** | The redirect URI in step 3.7 must exactly match `https://YOUR-APP/api/auth/callback/google`: `https`, no trailing slash, and your real Vercel address. Edit the client in Google Cloud and save; it can take a few minutes to apply. |
 | Google says **`access_denied`** or "app is being tested" | The app is still in Testing. Publish it (step 3.6) or add your email as a test user. |
+| Blue **"Allow"** banner about the Actual time calendar | You signed in before the app could write to its calendar. Make sure `calendar.app.created` is added in step 3.5, then click **Allow** and tick every permission Google shows. |
+| Finished tasks don't appear in Google Calendar | In Google Calendar, check that the **Actual time** calendar is ticked under *My calendars*. In the app, check **Settings → Actual time calendar** is switched on. |
 | Yellow **"Reconnect Google"** banner in the app | Click it and allow calendar access again. If it keeps coming back every week, the app is still in Testing; publish it (step 3.6). |
 | No planned blocks appear | In **Settings → Planning calendars**, tick the calendar you actually time-block in. Notion Calendar saves events to the Google calendar you picked in Notion Calendar's settings. |
 | Vercel build fails mentioning **`DATABASE_URL`** or **`DATABASE_URL_UNPOOLED`** | Repeat step 2 and make sure the database is connected to all environments, then redeploy. If your database provider uses other names, add `DATABASE_URL` (pooled) and `DATABASE_URL_UNPOOLED` (direct) yourself under Environment Variables. |

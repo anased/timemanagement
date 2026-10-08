@@ -70,6 +70,37 @@ describe.skipIf(!url)("per-user data isolation", () => {
     expect(await alice.reviews.listInRange(from, to)).toHaveLength(1);
   });
 
+  it("finishes and discards only your own timer", async () => {
+    await alice.timer.start({ title: "Alice focus" });
+    await bob.timer.start({ title: "Bob focus" });
+
+    const id = await bob.timer.finish({ title: "Bob wrote tests", note: "done" });
+    const finished = await bob.entries.get(id);
+    expect(finished).toMatchObject({ title: "Bob wrote tests", note: "done" });
+    expect(finished?.end).not.toBeNull();
+    expect((await alice.entries.running())?.title).toBe("Alice focus");
+
+    await expect(bob.timer.discard()).rejects.toBeInstanceOf(NotFoundError);
+    await alice.timer.discard();
+    expect(await alice.entries.running()).toBeNull();
+  });
+
+  it("only lets you tag your own entries with a calendar event", async () => {
+    const e = await alice.entries.create({ title: "Mine", start: new Date("2026-10-08T13:00:00Z"), end: new Date("2026-10-08T14:00:00Z") });
+    await bob.entries.setGoogleEventId(e.id, "hijack");
+    expect((await alice.entries.get(e.id))?.googleEventId).toBeNull();
+    await alice.entries.setGoogleEventId(e.id, "ev1");
+    expect((await alice.entries.get(e.id))?.googleEventId).toBe("ev1");
+  });
+
+  it("saves very short timers instead of rejecting them", async () => {
+    const now = new Date("2026-10-08T15:00:00Z");
+    await alice.timer.start({ title: "Blink" }, now);
+    const id = await alice.timer.finish({}, undefined, now);
+    const e = await alice.entries.get(id);
+    expect(e!.end!.getTime()).toBeGreaterThan(e!.start.getTime());
+  });
+
   it("rejects entries that end before they start", async () => {
     await expect(
       alice.entries.create({ title: "bad", start: new Date("2026-10-08T10:00:00Z"), end: new Date("2026-10-08T09:00:00Z") }),

@@ -6,6 +6,8 @@ import {
   deleteCategory,
   saveCalendars,
   savePreferences,
+  setCalendarSync,
+  syncRecentEntries,
   updateCategory,
 } from "@/app/actions/settings";
 import type { ActionResult } from "@/app/actions/result";
@@ -198,5 +200,41 @@ function CategoryRow({ category }: { category: CategoryDTO }) {
       </button>
       {status}
     </li>
+  );
+}
+
+export function ActualCalendarForm({ enabled, canWrite }: { enabled: boolean; canWrite: boolean }) {
+  const [on, setOn] = useState(enabled);
+  const toggle = useAction();
+  const backfill = useAction();
+  return (
+    <div className="space-y-3">
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={on}
+          disabled={toggle.pending}
+          onChange={(e) => {
+            const value = e.target.checked;
+            setOn(value);
+            toggle.run(() => setCalendarSync(value));
+          }}
+        />
+        Add finished tasks to my &ldquo;Actual time&rdquo; Google calendar
+        {toggle.status}
+      </label>
+      {on && canWrite && (
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            className="btn"
+            disabled={backfill.pending}
+            onClick={() => backfill.run(() => syncRecentEntries(), "Adding them now. Check your calendar in a minute.")}
+          >
+            Add entries from the last 30 days
+          </button>
+          {backfill.status}
+        </div>
+      )}
+    </div>
   );
 }

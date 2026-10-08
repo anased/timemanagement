@@ -17,7 +17,8 @@ Notion Calendar has no public API. It works on top of your Google Calendar accou
 
 | Where | What |
 |---|---|
-| **Timer bar** (every page) | Start or stop a live timer. Typing a new task and pressing *Switch* stops the current timer and starts the next one. The timer is stored in the database, so it survives refreshes and works across devices. |
+| **Timer bar** (every page) | **▶ New task** asks what you're working on (with one-tap chips for the planned block happening now and your recent tasks) and starts the clock. **✓ Done** asks for the category, a note and the planned block it counts towards, then saves it. Starting a new task while one runs saves the current one. The timer lives in the database, so it survives refreshes and works across devices. |
+| **Actual time calendar** | Finished tasks (and time you log or edit) are copied to an "Actual time" Google calendar the app creates, so they show up next to your plan in Google and Notion Calendar. Your planning calendars are never written to. You can switch this off in Settings. |
 | **Today** | Planned and actual side by side on one time axis. ▶ on a block starts a timer linked to it; **+** logs time against it. Click a free slot to log what you did there, or click an entry to edit or delete it. |
 | **Check in** | Lists past blocks with nothing tracked. One tap: *As planned*, *Partly* (adjust the times), *Something else* (say what), or *Skipped*. |
 | **Free time** | Each gap between blocks, broken down into the activities tracked in it plus untracked time. |
@@ -32,8 +33,9 @@ Notion Calendar has no public API. It works on top of your Google Calendar accou
 
 Next.js 15 (App Router, server actions) · TypeScript · Tailwind v4 · Auth.js v5 (Google) · Prisma + Postgres · Recharts · Vitest.
 
-- `lib/auth.ts`, `auth.config.ts`, `middleware.ts`: Google sign-in requesting `calendar.readonly` with offline access. Every page except `/signin` requires a session.
+- `lib/auth.ts`, `auth.config.ts`, `middleware.ts`: Google sign-in requesting `calendar.readonly` (read the plan) and `calendar.app.created` (write only to the app's own "Actual time" calendar), with offline access. Every page except `/signin` requires a session.
 - `lib/db-scoped.ts`: **all** app data access goes through `forUser(userId)`, which adds the user id to every query. The user id comes only from the server session (`lib/session.ts`), never from the client.
+- `lib/calendar-sync.ts`: mirrors finished entries into the "Actual time" calendar. It's best-effort (runs after the response; failures are logged) and recreates the event or calendar if you delete them in Google.
 - `lib/google-calendar.ts`: refreshes the Google access token and lists calendars and events. All-day, cancelled, declined and out-of-office events are ignored.
 - `lib/analytics.ts`: pure plan-vs-actual functions (free slots, block comparison, gap usage, summaries, task stats), fully unit-tested.
 - `lib/period.ts`: loads a range of days and runs the analytics, in the user's time zone.
@@ -42,7 +44,7 @@ Next.js 15 (App Router, server actions) · TypeScript · Tailwind v4 · Auth.js 
 
 1. Go to <https://console.cloud.google.com/> and create (or pick) a project.
 2. **APIs & Services → Library**: enable the **Google Calendar API**.
-3. **APIs & Services → OAuth consent screen**: choose *External*, fill in the app name and your email, and add the scope `.../auth/calendar.readonly`. While the app is in *Testing*, add every Google account that should be able to sign in under *Test users*.
+3. **APIs & Services → OAuth consent screen**: choose *External*, fill in the app name and your email, and add the scopes `.../auth/calendar.readonly` and `.../auth/calendar.app.created`. While the app is in *Testing*, add every Google account that should be able to sign in under *Test users*.
 4. **APIs & Services → Credentials → Create credentials → OAuth client ID** → *Web application*:
    - Authorized JavaScript origin: `http://localhost:3000` (plus your production URL)
    - Authorized redirect URI: `http://localhost:3000/api/auth/callback/google` (plus `https://<your-domain>/api/auth/callback/google`)
@@ -71,7 +73,8 @@ The user-isolation test (`tests/isolation.test.ts`) needs a separate, migrated d
 
 ```bash
 createdb timemanagement_test   # or via docker exec
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/timemanagement_test npx prisma migrate deploy
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/timemanagement_test \
+DATABASE_URL_UNPOOLED=postgresql://postgres:postgres@localhost:5432/timemanagement_test npx prisma migrate deploy
 # in .env: TEST_DATABASE_URL="postgresql://postgres:postgres@localhost:5432/timemanagement_test"
 ```
 

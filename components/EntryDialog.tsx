@@ -2,7 +2,8 @@
 
 import { createContext, useContext, useState, useTransition } from "react";
 import { deleteEntry, saveEntry } from "@/app/actions/entries";
-import { formatTime, toLocalInput } from "@/lib/time";
+import { toLocalInput } from "@/lib/time";
+import { CategorySelect, PlannedSelect } from "./fields";
 import type { BlockDTO, CategoryDTO } from "./types";
 
 export interface EntryDraft {
@@ -158,35 +159,15 @@ function EntryForm({
             {isRunning && <p className="mt-1 text-xs text-muted">Leave empty to keep the timer running.</p>}
           </div>
         </div>
-        <div>
-          <label className="label" htmlFor="entry-category">
-            Category
-          </label>
-          <select id="entry-category" className="input" value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-            <option value="">No category</option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="label" htmlFor="entry-planned">
-            Counts towards planned block
-          </label>
-          <select id="entry-planned" className="input" value={plannedId} onChange={(e) => linkBlock(e.target.value)}>
-            <option value="">— Not planned —</option>
-            {draft.plannedEventId && !blocks.some((b) => b.id === draft.plannedEventId) && (
-              <option value={draft.plannedEventId}>(keep current link)</option>
-            )}
-            {blocks.map((b) => (
-              <option key={b.id} value={b.id}>
-                {formatTime(b.start, timeZone)}–{formatTime(b.end, timeZone)} {b.title}
-              </option>
-            ))}
-          </select>
-        </div>
+        <CategorySelect id="entry-category" categories={categories} value={categoryId} onChange={setCategoryId} />
+        <PlannedSelect
+          id="entry-planned"
+          blocks={blocks}
+          value={plannedId}
+          onChange={linkBlock}
+          keepId={draft.plannedEventId}
+          timeZone={timeZone}
+        />
         <div>
           <label className="label" htmlFor="entry-note">
             Note

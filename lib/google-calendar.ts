@@ -2,6 +2,7 @@ import "server-only";
 import { prisma } from "@/lib/db";
 
 const API = "https://www.googleapis.com/calendar/v3";
+export const WRITE_SCOPE = "https://www.googleapis.com/auth/calendar.app.created";
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 
 export interface PlannedEvent {
@@ -33,7 +34,11 @@ interface RawEvent {
   start?: { dateTime?: string; date?: string };
   end?: { dateTime?: string; date?: string };
   attendees?: { self?: boolean; responseStatus?: string }[];
+  extendedProperties?: { private?: Record<string, string> };
 }
+
+/** Private event property marking events this app wrote for a time entry. */
+export const ENTRY_PROPERTY = "tmEntryId";
 
 /**
  * Turns a Google event into a planned block, or null when it is not a time
@@ -42,6 +47,8 @@ interface RawEvent {
  */
 export function normalizeEvent(raw: RawEvent, calendarId: string): PlannedEvent | null {
   if (raw.status === "cancelled") return null;
+  // Our own "actual time" events are never part of the plan.
+  if (raw.extendedProperties?.private?.[ENTRY_PROPERTY]) return null;
   if (raw.eventType && !["default", "focusTime", "fromGmail"].includes(raw.eventType)) return null;
   if (!raw.start?.dateTime || !raw.end?.dateTime) return null;
   if (raw.attendees?.some((a) => a.self && a.responseStatus === "declined")) return null;
@@ -58,15 +65,44 @@ export function normalizeEvent(raw: RawEvent, calendarId: string): PlannedEvent 
   };
 }
 
-async function googleGet<T>(token: string, path: string, params: Record<string, string> = {}): Promise<T> {
+export class GoogleHttpError extends Error {
+  constructor(
+    public status: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+/** Calls the Calendar API. 401/403 become CalendarAuthError, other failures GoogleHttpError. */
+export async function googleFetch<T>(
+  token: string,
+  method: "GET" | "POST" | "PATCH" | "DELETE",
+  path: string,
+  { params = {}, body }: { params?: Record<string, string>; body?: unknown } = {},
+): Promise<T> {
   const url = new URL(API + path);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+  const res = await fetch(url, {
+    method,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+    cache: "no-store",
+  });
   if (res.status === 401 || res.status === 403) {
     throw new CalendarAuthError(`Google Calendar refused access (${res.status})`);
   }
-  if (!res.ok) throw new Error(`Google Calendar error ${res.status}: ${await res.text()}`);
-  return (await res.json()) as T;
+  if (!res.ok) throw new GoogleHttpError(res.status, `Google Calendar error ${res.status}: ${await res.text()}`);
+  if (res.status === 204) return undefined as T;
+  const text = await res.text();
+  return (text ? JSON.parse(text) : undefined) as T;
+}
+
+function googleGet<T>(token: string, path: string, params: Record<string, string> = {}): Promise<T> {
+  return googleFetch<T>(token, "GET", path, { params });
 }
 
 /** Fetches planned events from several calendars, de-duplicated and sorted. */
@@ -105,6 +141,16 @@ export async function fetchEvents(
   const byId = new Map<string, PlannedEvent>();
   for (const e of perCalendar.flat()) if (!byId.has(e.id)) byId.set(e.id, e);
   return [...byId.values()].sort((a, b) => a.start.getTime() - b.start.getTime());
+}
+
+/** Whether the user granted the scope that lets the app write to its own calendar. */
+export function canWriteCalendar(scope: string | null | undefined): boolean {
+  return !!scope?.split(/\s+/).includes(WRITE_SCOPE);
+}
+
+export async function hasWriteAccess(userId: string): Promise<boolean> {
+  const account = await prisma.account.findFirst({ where: { userId, provider: "google" }, select: { scope: true } });
+  return canWriteCalendar(account?.scope);
 }
 
 /** A valid Google access token for the user, refreshing it when it is about to expire. */
@@ -161,11 +207,24 @@ export async function listCalendars(userId: string): Promise<CalendarInfo[]> {
   }));
 }
 
-/** Calendars whose events count as the plan. Defaults to the primary calendar. */
+/**
+ * Calendars whose events count as the plan. Defaults to the primary calendar.
+ * The app's own "Actual time" calendar is never included.
+ */
 export async function selectedCalendarIds(userId: string): Promise<string[]> {
-  const rows = await prisma.calendarSelection.findMany({ where: { userId } });
-  if (rows.length === 0) return ["primary"];
-  return rows.filter((r) => r.enabled).map((r) => r.calendarId);
+  const [rows, user] = await Promise.all([
+    prisma.calendarSelection.findMany({ where: { userId } }),
+    prisma.user.findUnique({ where: { id: userId }, select: { actualCalendarId: true } }),
+  ]);
+  return planCalendarIds(rows, user?.actualCalendarId ?? null);
+}
+
+export function planCalendarIds(
+  rows: { calendarId: string; enabled: boolean }[],
+  actualCalendarId: string | null,
+): string[] {
+  const ids = rows.length === 0 ? ["primary"] : rows.filter((r) => r.enabled).map((r) => r.calendarId);
+  return ids.filter((id) => id !== actualCalendarId);
 }
 
 export type PlannedResult =

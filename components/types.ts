@@ -21,3 +21,10 @@ export interface BlockDTO {
   end: Date;
   htmlLink?: string;
 }
+
+/** The running timer, including the planned block it was started from. */
+export interface RunningDTO extends EntryDTO {
+  plannedTitle: string | null;
+  plannedStart: Date | null;
+  plannedEnd: Date | null;
+}

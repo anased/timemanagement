@@ -6,6 +6,8 @@ export const GOOGLE_SCOPES = [
   "email",
   "profile",
   "https://www.googleapis.com/auth/calendar.readonly",
+  // Lets the app create its own "Actual time" calendar and manage only the events in it.
+  "https://www.googleapis.com/auth/calendar.app.created",
 ].join(" ");
 
 /**

@@ -1,6 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
+import { syncEntry } from "@/lib/calendar-sync";
 import { z } from "zod";
 import { currentScope } from "@/lib/session";
 import { isValidTimeZone } from "@/lib/time";
@@ -84,5 +86,27 @@ export async function deleteCategory(id: string): Promise<ActionResult> {
     const scope = await currentScope();
     await scope.categories.remove(z.string().min(1).parse(id));
     revalidatePath("/", "layout");
+  });
+}
+
+export async function setCalendarSync(enabled: boolean): Promise<ActionResult> {
+  return run(async () => {
+    const scope = await currentScope();
+    await scope.settings.update({ syncToCalendar: z.boolean().parse(enabled) });
+    revalidatePath("/", "layout");
+  });
+}
+
+/** Adds finished entries from the last 30 days that aren't in the calendar yet. */
+export async function syncRecentEntries(): Promise<ActionResult> {
+  return run(async () => {
+    const scope = await currentScope();
+    const to = new Date();
+    const from = new Date(to.getTime() - 30 * 24 * 3600_000);
+    const pending = (await scope.entries.listInRange(from, to)).filter((e) => e.end && !e.googleEventId);
+    after(async () => {
+      // One at a time: the first call creates the calendar the rest reuse.
+      for (const e of pending.slice(0, 300)) await syncEntry(scope.userId, e.id);
+    });
   });
 }

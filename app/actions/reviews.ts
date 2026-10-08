@@ -1,7 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { z } from "zod";
+import { syncEntry } from "@/lib/calendar-sync";
 import { currentScope } from "@/lib/session";
 import { fromLocalInput } from "@/lib/time";
 import { run, type ActionResult } from "./result";
@@ -40,8 +42,9 @@ export async function reviewBlock(input: z.input<typeof schema>): Promise<Action
     const end = data.end ? fromLocalInput(data.end, timeZone) : block.end;
     const snapshot = { plannedEventId: block.id, plannedTitle: block.title, plannedStart: block.start, plannedEnd: block.end };
 
+    let createdId: string | null = null;
     if (data.status === "DONE" || data.status === "PARTIAL") {
-      await scope.entries.create({
+      createdId = (await scope.entries.create({
         title: block.title,
         start: data.status === "DONE" ? block.start : start,
         end: data.status === "DONE" ? block.end : end,
@@ -49,16 +52,20 @@ export async function reviewBlock(input: z.input<typeof schema>): Promise<Action
         note: data.note ?? null,
         source: "CHECKIN",
         ...snapshot,
-      });
+      })).id;
     } else if (data.status === "REPLACED") {
-      await scope.entries.create({
+      createdId = (await scope.entries.create({
         title: data.title!,
         start,
         end,
         categoryId: data.categoryId ?? null,
         note: data.note ?? null,
         source: "CHECKIN",
-      });
+      })).id;
+    }
+    if (createdId) {
+      const id = createdId;
+      after(() => syncEntry(scope.userId, id));
     }
 
     await scope.reviews.upsert(
