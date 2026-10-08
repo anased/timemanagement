@@ -19,7 +19,7 @@ You'll set up three things:
    - **The first deploy will fail. That's expected:** the database and passwords aren't set up yet. Steps 2–4 fix that.
 5. Find your app's address: open the project and go to **Settings → Domains**. It looks like `timemanagement-xxxx.vercel.app`. Write it down; below it's called **YOUR-APP**.
 
-> **Which branch?** Vercel deploys the repo's main branch (`main`). The code currently lives on the branch `claude/pensive-wozniak-o9tas2`. Merge it into `main` first (ask Claude to open a pull request, then click **Merge** on GitHub), or in Vercel go to **Settings → Git** and set the production branch to `claude/pensive-wozniak-o9tas2`.
+> **Which branch?** Vercel deploys the repo's default branch. Right now that's `claude/pensive-wozniak-o9tas2`, the only branch, which holds all the code, so there's nothing to change. If you later create a `main` branch and make it the default, Vercel will follow it (you can check under **Settings → Git**).
 
 ## 2. Add the database (Neon)
 
