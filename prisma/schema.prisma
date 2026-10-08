@@ -1,0 +1,160 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Auth.js tables ----------
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Preferences
+  timeZone    String @default("UTC")
+  /// Start of the tracked day window, minutes after local midnight (default 07:00)
+  dayStartMin Int    @default(420)
+  /// End of the tracked day window, minutes after local midnight (default 22:00)
+  dayEndMin   Int    @default(1320)
+  /// Free slots shorter than this are ignored
+  minGapMin   Int    @default(15)
+
+  accounts           Account[]
+  sessions           Session[]
+  categories         Category[]
+  timeEntries        TimeEntry[]
+  reviews            PlannedBlockReview[]
+  calendarSelections CalendarSelection[]
+}
+
+model Account {
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([provider, providerAccountId])
+}
+
+model Session {
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@id([identifier, token])
+}
+
+// ---------- App tables (every row is owned by exactly one user) ----------
+
+model Category {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  color     String   @default("#6366f1")
+  createdAt DateTime @default(now())
+
+  user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entries TimeEntry[]
+
+  @@unique([userId, name])
+}
+
+enum EntrySource {
+  TIMER
+  MANUAL
+  CHECKIN
+}
+
+model TimeEntry {
+  id         String      @id @default(cuid())
+  userId     String
+  title      String
+  categoryId String?
+  start      DateTime
+  /// null while the timer is running
+  end        DateTime?
+  note       String?
+  source     EntrySource @default(MANUAL)
+
+  /// Google Calendar event this entry fulfils (if any), plus a snapshot of the plan
+  plannedEventId String?
+  plannedTitle   String?
+  plannedStart   DateTime?
+  plannedEnd     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@index([userId, start])
+  @@index([userId, end])
+  @@index([userId, plannedEventId])
+}
+
+enum ReviewStatus {
+  DONE
+  PARTIAL
+  SKIPPED
+  REPLACED
+}
+
+model PlannedBlockReview {
+  id              String       @id @default(cuid())
+  userId          String
+  calendarEventId String
+  status          ReviewStatus
+  note            String?
+  plannedTitle    String
+  plannedStart    DateTime
+  plannedEnd      DateTime
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, calendarEventId])
+  @@index([userId, plannedStart])
+}
+
+model CalendarSelection {
+  userId     String
+  calendarId String
+  name       String
+  enabled    Boolean @default(true)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, calendarId])
+}

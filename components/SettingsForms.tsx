@@ -1,0 +1,202 @@
+"use client";
+
+import { useState, useTransition } from "react";
+import {
+  createCategory,
+  deleteCategory,
+  saveCalendars,
+  savePreferences,
+  updateCategory,
+} from "@/app/actions/settings";
+import type { ActionResult } from "@/app/actions/result";
+import type { CategoryDTO } from "./types";
+
+function useAction() {
+  const [pending, startTransition] = useTransition();
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  function run(fn: () => Promise<ActionResult>, success = "Saved") {
+    startTransition(async () => {
+      const res = await fn();
+      setMessage(res.ok ? { ok: true, text: success } : { ok: false, text: res.error });
+    });
+  }
+  const status = message && (
+    <span className={`text-sm ${message.ok ? "text-emerald-600" : "text-red-600"}`}>{message.text}</span>
+  );
+  return { pending, run, status };
+}
+
+export function CalendarsForm({
+  calendars,
+}: {
+  calendars: { id: string; name: string; primary: boolean; color?: string; enabled: boolean }[];
+}) {
+  const [enabled, setEnabled] = useState(() => new Set(calendars.filter((c) => c.enabled).map((c) => c.id)));
+  const { pending, run, status } = useAction();
+  if (calendars.length === 0) return <p className="text-sm text-muted">No calendars found.</p>;
+
+  function toggle(id: string) {
+    setEnabled((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  return (
+    <div className="space-y-3">
+      <ul className="space-y-1.5">
+        {calendars.map((c) => (
+          <li key={c.id}>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={enabled.has(c.id)} onChange={() => toggle(c.id)} />
+              <span className="h-2.5 w-2.5 rounded-full" style={{ background: c.color ?? "#8a8a85" }} />
+              {c.name}
+              {c.primary && <span className="text-xs text-muted">(primary)</span>}
+            </label>
+          </li>
+        ))}
+      </ul>
+      <div className="flex items-center gap-3">
+        <button
+          className="btn-primary"
+          disabled={pending}
+          onClick={() =>
+            run(() => saveCalendars(calendars.map((c) => ({ calendarId: c.id, name: c.name, enabled: enabled.has(c.id) }))))
+          }
+        >
+          Save calendars
+        </button>
+        {status}
+      </div>
+    </div>
+  );
+}
+
+export function PreferencesForm({
+  initial,
+}: {
+  initial: { timeZone: string; dayStart: string; dayEnd: string; minGapMin: number };
+}) {
+  const [values, setValues] = useState(initial);
+  const { pending, run, status } = useAction();
+  const zones = typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("timeZone") : [];
+  const set = (k: keyof typeof values) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+    setValues((v) => ({ ...v, [k]: e.target.value }));
+
+  return (
+    <form
+      className="space-y-3"
+      onSubmit={(e) => {
+        e.preventDefault();
+        run(() => savePreferences(values));
+      }}
+    >
+      <div className="grid gap-3 sm:grid-cols-4">
+        <div className="sm:col-span-2">
+          <label className="label" htmlFor="tz">
+            Time zone
+          </label>
+          <input id="tz" className="input" list="tz-list" value={values.timeZone} onChange={set("timeZone")} />
+          <datalist id="tz-list">
+            {zones.map((z) => (
+              <option key={z} value={z} />
+            ))}
+          </datalist>
+        </div>
+        <div>
+          <label className="label" htmlFor="day-start">
+            Day starts
+          </label>
+          <input id="day-start" type="time" className="input" value={values.dayStart} onChange={set("dayStart")} />
+        </div>
+        <div>
+          <label className="label" htmlFor="day-end">
+            Day ends
+          </label>
+          <input id="day-end" type="time" className="input" value={values.dayEnd} onChange={set("dayEnd")} />
+        </div>
+        <div>
+          <label className="label" htmlFor="min-gap">
+            Ignore free slots shorter than (min)
+          </label>
+          <input id="min-gap" type="number" min={0} max={240} className="input" value={values.minGapMin} onChange={set("minGapMin")} />
+        </div>
+      </div>
+      <p className="text-xs text-muted">
+        Free slots and untracked time are counted only between the start and end of your day.
+      </p>
+      <div className="flex items-center gap-3">
+        <button className="btn-primary" disabled={pending} type="submit">
+          Save
+        </button>
+        {status}
+      </div>
+    </form>
+  );
+}
+
+export function CategoriesForm({ categories }: { categories: CategoryDTO[] }) {
+  const [name, setName] = useState("");
+  const [color, setColor] = useState("#6366f1");
+  const { pending, run, status } = useAction();
+
+  return (
+    <div className="space-y-3">
+      <ul className="space-y-1.5">
+        {categories.map((c) => (
+          <CategoryRow key={c.id} category={c} />
+        ))}
+      </ul>
+      <form
+        className="flex items-center gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          run(async () => {
+            const res = await createCategory({ name, color });
+            if (res.ok) setName("");
+            return res;
+          }, "Added");
+        }}
+      >
+        <input type="color" className="h-8 w-10 rounded border border-line" value={color} onChange={(e) => setColor(e.target.value)} aria-label="Colour" />
+        <input className="input max-w-xs" placeholder="New category" value={name} onChange={(e) => setName(e.target.value)} />
+        <button className="btn-primary" disabled={pending || !name.trim()} type="submit">
+          Add
+        </button>
+        {status}
+      </form>
+    </div>
+  );
+}
+
+function CategoryRow({ category }: { category: CategoryDTO }) {
+  const [name, setName] = useState(category.name);
+  const [color, setColor] = useState(category.color);
+  const { pending, run, status } = useAction();
+  const dirty = name !== category.name || color !== category.color;
+  return (
+    <li className="flex items-center gap-2">
+      <input type="color" className="h-8 w-10 rounded border border-line" value={color} onChange={(e) => setColor(e.target.value)} aria-label="Colour" />
+      <input className="input max-w-xs" value={name} onChange={(e) => setName(e.target.value)} aria-label="Category name" />
+      {dirty && (
+        <button className="btn" disabled={pending} onClick={() => run(() => updateCategory({ id: category.id, name, color }))}>
+          Save
+        </button>
+      )}
+      <button
+        className="btn text-red-600"
+        disabled={pending}
+        onClick={() => {
+          if (confirm(`Delete "${category.name}"? Entries keep their time but lose the category.`)) {
+            run(() => deleteCategory(category.id), "Deleted");
+          }
+        }}
+      >
+        Delete
+      </button>
+      {status}
+    </li>
+  );
+}
