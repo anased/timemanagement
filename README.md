@@ -11,7 +11,7 @@ Each user signs in with Google. All data is stored per user, and nobody can see 
 
 ## Notion Calendar
 
-Notion Calendar has no public API. It works on top of your Google Calendar accounts, though: every block you create in Notion Calendar is saved to a Google calendar. This app reads your Google Calendar (read-only), so blocks you make in Notion Calendar show up here automatically. Under **Settings → Planning calendars**, pick the calendar(s) you time-block in.
+Notion Calendar has no public API. It works on top of your Google Calendar accounts, though: every block you create in Notion Calendar is saved to a Google calendar. This app reads your Google Calendar (read-only), so blocks you make in Notion Calendar show up here automatically. Under **Settings → Calendars**, set the calendar(s) you time-block in to **Plan**.
 
 ## Features
 
@@ -25,7 +25,8 @@ Notion Calendar has no public API. It works on top of your Google Calendar accou
 | **Plan vs. actual table** | Planned vs. actual minutes, difference, start drift, status, and what happened "meanwhile" for each block. |
 | **Week** | A 7-day calendar with three views: *Plan + actual* side by side, *Plan* only, or *Actual* only. It works like Today: drag in a day to log time, click an entry to edit it, click a block to log against it, ▶ to start its timer. Below it, per-day totals (planned, on plan, off plan, free time used, untracked, adherence) and time by category. |
 | **Reports** (7 / 30 / 90 days) | Planned vs. actual chart, time by category, what fills your free time, tasks that run long or short, and skipped or replaced blocks. |
-| **Settings** | Planning calendars, time zone, the hours that count as your day (07:00–22:00 by default), minimum free-slot length, and categories. |
+| **Calendars** | Every calendar in your Google calendar list, including ones shared with you or subscribed to, is listed in Settings as **Plan** (its events are your time blocks), **Show** (its events appear on Today and Week as faint dashed boxes for reference, but never count towards plan vs. actual), or **Off**. All-day events from visible calendars show as chips under the day. Plan blocks are tinted with their calendar's colour. |
+| **Settings** | Calendars, time zone, the hours that count as your day (07:00–22:00 by default), minimum free-slot length, and categories. |
 
 **Plan adherence** = for blocks that have started, the share of planned minutes actually spent on that block's task (capped at 100% per block).
 

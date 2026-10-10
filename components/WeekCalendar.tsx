@@ -5,8 +5,9 @@ import { useEffect, useState, useTransition } from "react";
 import { startTimer } from "@/app/actions/entries";
 import { formatDay, formatDuration, formatTime, type DayKey } from "@/lib/time";
 import { useEntryDialog } from "./EntryDialog";
-import { layoutLanes, STATUS_STYLE, useDragToLog, type TimelineBlock } from "./timeline";
-import type { CategoryDTO, EntryDTO } from "./types";
+import { AllDayStrip, ShownBox } from "./CalendarBits";
+import { blockTint, layoutLanes, planLanes, STATUS_STYLE, useDragToLog, type TimelineBlock } from "./timeline";
+import type { AllDayDTO, CategoryDTO, EntryDTO, ShownDTO } from "./types";
 import { useNow } from "./useNow";
 
 const PX_PER_MIN = 0.8;
@@ -25,6 +26,9 @@ export interface WeekDay {
   displayStart: Date;
   displayEnd: Date;
   blocks: TimelineBlock[];
+  /** Events from "show only" calendars. */
+  shown: ShownDTO[];
+  allDay: AllDayDTO[];
   entries: EntryDTO[];
   slots: { start: Date; end: Date }[];
 }
@@ -117,6 +121,17 @@ export function WeekCalendar({
             ))}
           </div>
 
+          {mode !== "actual" && days.some((d) => d.allDay.length > 0) && (
+            <div className={`grid ${cols} border-b border-line`}>
+              <div className="self-center pl-1 text-[10px] text-muted">all day</div>
+              {days.map((d) => (
+                <div key={d.day} className="min-w-0 border-l border-line p-1">
+                  <AllDayStrip items={d.allDay} />
+                </div>
+              ))}
+            </div>
+          )}
+
           <div className={`relative grid ${cols}`} style={{ height }}>
             {hours.map((m) => (
               <div
@@ -158,7 +173,7 @@ function DayColumn({
 }) {
   const dialog = useEntryDialog();
   const [pending, startTransition] = useTransition();
-  const { displayStart, displayEnd, blocks, entries, slots } = data;
+  const { displayStart, displayEnd, blocks, shown, entries, slots } = data;
   const t0 = displayStart.getTime();
   const totalMin = (displayEnd.getTime() - t0) / 60000;
   const y = (d: Date) => Math.max(0, Math.min(totalMin, (d.getTime() - t0) / 60000)) * PX_PER_MIN;
@@ -167,7 +182,7 @@ function DayColumn({
   const span = (s: Date, e: Date | null) => `${formatTime(s, timeZone)}–${e ? formatTime(e, timeZone) : "now"}`;
 
   const entryEnd = (e: EntryDTO) => e.end ?? (now > e.start ? now : e.start);
-  const blockLanes = layoutLanes(blocks, (b) => [b.start.getTime(), b.end.getTime()]);
+  const { blockLanes, shownLanes } = planLanes(blocks, shown);
   const entryLanes = layoutLanes(entries, (e) => [e.start.getTime(), entryEnd(e).getTime()]);
   const showNow = showNowLine && now >= displayStart && now <= displayEnd;
 
@@ -205,11 +220,26 @@ function DayColumn({
           + log
         </button>
       ))}
+      {shownLanes.map(({ item: e, lane, lanes }) => (
+        <ShownBox
+          key={e.id}
+          event={e}
+          timeZone={timeZone}
+          compact
+          style={{
+            top: y(e.start),
+            height: h(e.start, e.end),
+            left: `calc(${(lane / lanes) * 100}% + 2px)`,
+            width: `calc(${100 / lanes}% - 4px)`,
+          }}
+        />
+      ))}
       {blockLanes.map(({ item: b, lane, lanes }) => (
         <div
           key={b.id}
-          className={`group absolute overflow-hidden rounded border-l-[3px] bg-accent/10 text-[10px] leading-tight ${STATUS_STYLE[b.status]}`}
+          className={`group absolute overflow-hidden rounded border-l-[3px] text-[10px] leading-tight ${b.color ? "" : "bg-accent/10"} ${STATUS_STYLE[b.status]}`}
           style={{
+            ...blockTint(b.color),
             top: y(b.start),
             height: h(b.start, b.end),
             left: `calc(${(lane / lanes) * 100}% + 2px)`,

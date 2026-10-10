@@ -157,11 +157,20 @@ model PlannedBlockReview {
   @@index([userId, plannedStart])
 }
 
+/// How a Google calendar is used: its events are the plan, are only shown, or are ignored.
+enum CalendarRole {
+  PLAN
+  SHOW
+  OFF
+}
+
 model CalendarSelection {
   userId     String
   calendarId String
   name       String
-  enabled    Boolean @default(true)
+  role       CalendarRole @default(PLAN)
+  /// Google's colour for the calendar, saved with the selection
+  color      String?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

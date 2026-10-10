@@ -211,7 +211,9 @@ export function forUser(userId: string, db: PrismaClient = defaultClient) {
     calendarSelections() {
       return db.calendarSelection.findMany({ where: { userId } });
     },
-    async setCalendarSelections(rows: { calendarId: string; name: string; enabled: boolean }[]) {
+    async setCalendarSelections(
+      rows: { calendarId: string; name: string; role: "PLAN" | "SHOW" | "OFF"; color?: string | null }[],
+    ) {
       await db.$transaction([
         db.calendarSelection.deleteMany({ where: { userId } }),
         db.calendarSelection.createMany({ data: rows.map((r) => ({ ...r, userId })) }),

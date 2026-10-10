@@ -1,8 +1,9 @@
 import { signIn } from "@/lib/auth";
-import type { PlannedResult } from "@/lib/google-calendar";
+
+type CalendarStatus = { ok: true } | { ok: false; reason: "auth" | "error"; message: string };
 
 /** Explains why calendar blocks are missing and offers to reconnect Google. */
-export function CalendarBanner({ result }: { result: PlannedResult }) {
+export function CalendarBanner({ result }: { result: CalendarStatus }) {
   if (result.ok) return null;
   return (
     <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm">

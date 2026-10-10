@@ -5,7 +5,7 @@ import { EntryDialogProvider } from "@/components/EntryDialog";
 import { StatTiles } from "@/components/StatTiles";
 import { WeekCalendar } from "@/components/WeekCalendar";
 import { categoryTotals, combineSummaries } from "@/lib/analytics";
-import { loadPeriod } from "@/lib/period";
+import { calendarView, loadPeriod } from "@/lib/period";
 import { currentScope } from "@/lib/session";
 import { addDays, displayMinutes, formatDay, formatDuration, isDayKey, localTime, todayKey, weekStart } from "@/lib/time";
 
@@ -20,13 +20,13 @@ export default async function WeekPage({ searchParams }: { searchParams: Promise
   const data = await loadPeriod(scope, start, 7);
   const totals = categoryTotals(data.entries, data.range, data.now);
 
-  const blocks = data.days.flatMap((d) =>
-    d.planned.map((p) => ({ id: p.id, title: p.title, start: p.start, end: p.end, htmlLink: p.htmlLink })),
-  );
+  const views = data.days.map((d) => calendarView(d, data.calendarColors));
+  const blocks = views.flatMap((v) => v.blocks);
 
   // One time axis for the whole week: the user's day hours, stretched to fit everything shown.
   const items: [Date, Date][] = [
     ...blocks.map((b): [Date, Date] => [b.start, b.end]),
+    ...views.flatMap((v) => v.shown.map((e): [Date, Date] => [e.start, e.end])),
     ...data.entries.map((e): [Date, Date] => [e.start, e.end ?? data.now]),
   ];
   const ranges = data.days.map((d) =>
@@ -35,24 +35,14 @@ export default async function WeekPage({ searchParams }: { searchParams: Promise
   const startMin = Math.min(...ranges.map((r) => r[0]));
   const endMin = Math.max(...ranges.map((r) => r[1]));
 
-  const calendarDays = data.days.map((d) => {
-    const statusById = new Map(d.comparisons.map((c) => [c.block.id, c.status]));
-    return {
-      day: d.day,
-      displayStart: localTime(d.day, startMin, timeZone),
-      displayEnd: localTime(d.day, endMin, timeZone),
-      blocks: d.planned.map((p) => ({
-        id: p.id,
-        title: p.title,
-        start: p.start,
-        end: p.end,
-        htmlLink: p.htmlLink,
-        status: statusById.get(p.id) ?? "UPCOMING",
-      })),
-      entries: data.entries.filter((e) => e.start < d.range.end && (e.end === null || e.end > d.range.start)),
-      slots: d.gaps.map((g) => g.slot),
-    };
-  });
+  const calendarDays = data.days.map((d, i) => ({
+    day: d.day,
+    displayStart: localTime(d.day, startMin, timeZone),
+    displayEnd: localTime(d.day, endMin, timeZone),
+    ...views[i],
+    entries: data.entries.filter((e) => e.start < d.range.end && (e.end === null || e.end > d.range.start)),
+    slots: d.gaps.map((g) => g.slot),
+  }));
 
   return (
     <EntryDialogProvider categories={data.categories} blocks={blocks} timeZone={timeZone}>

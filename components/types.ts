@@ -20,6 +20,26 @@ export interface BlockDTO {
   start: Date;
   end: Date;
   htmlLink?: string;
+  /** Colour of the Google calendar the block comes from. */
+  color?: string;
+}
+
+/** A timed event from a "show only" calendar: displayed, not part of the plan. */
+export interface ShownDTO {
+  id: string;
+  title: string;
+  start: Date;
+  end: Date;
+  color?: string;
+  htmlLink?: string;
+}
+
+/** An all-day event shown as a chip on the day. */
+export interface AllDayDTO {
+  id: string;
+  title: string;
+  color?: string;
+  htmlLink?: string;
 }
 
 /** The running timer, including the planned block it was started from. */
