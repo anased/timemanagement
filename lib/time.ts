@@ -117,3 +117,34 @@ export function dragRange(
   start = Math.max(min, Math.min(start, end - step));
   return { start: new Date(start), end: new Date(Math.max(end, start + step)) };
 }
+
+/** Minutes after local midnight (wall clock) of `date` on `day`, clamped to [0, 1440]. */
+function wallMinute(date: Date, day: DayKey, tz: string): number {
+  const { start, end } = dayBounds(day, tz);
+  if (date <= start) return 0;
+  if (date >= end) return 24 * 60;
+  const t = new TZDate(date, tz);
+  return t.getHours() * 60 + t.getMinutes();
+}
+
+/**
+ * Wall-clock minute range [start, end] to show for `day`: the `window` (e.g.
+ * the user's day hours), stretched to include every [start, end] in `items`,
+ * rounded out to whole hours and clamped to the day.
+ */
+export function displayMinutes(
+  day: DayKey,
+  items: [Date, Date][],
+  tz: string,
+  window: [number, number],
+): [number, number] {
+  let lo = window[0];
+  let hi = window[1];
+  const { start, end } = dayBounds(day, tz);
+  for (const [s, e] of items) {
+    if (e <= start || s >= end) continue;
+    lo = Math.min(lo, wallMinute(s, day, tz));
+    hi = Math.max(hi, wallMinute(e, day, tz));
+  }
+  return [Math.max(0, Math.floor(lo / 60) * 60), Math.min(24 * 60, Math.ceil(hi / 60) * 60)];
+}

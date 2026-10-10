@@ -23,7 +23,7 @@ Notion Calendar has no public API. It works on top of your Google Calendar accou
 | **Check in** | Lists past blocks with nothing tracked. One tap: *As planned*, *Partly* (adjust the times), *Something else* (say what), or *Skipped*. |
 | **Free time** | Each gap between blocks, broken down into the activities tracked in it plus untracked time. |
 | **Plan vs. actual table** | Planned vs. actual minutes, difference, start drift, status, and what happened "meanwhile" for each block. |
-| **Week** | Per-day totals: planned, on plan, off plan, free time used, untracked, adherence. Also time by category. |
+| **Week** | A 7-day calendar with three views: *Plan + actual* side by side, *Plan* only, or *Actual* only. It works like Today: drag in a day to log time, click an entry to edit it, click a block to log against it, ▶ to start its timer. Below it, per-day totals (planned, on plan, off plan, free time used, untracked, adherence) and time by category. |
 | **Reports** (7 / 30 / 90 days) | Planned vs. actual chart, time by category, what fills your free time, tasks that run long or short, and skipped or replaced blocks. |
 | **Settings** | Planning calendars, time zone, the hours that count as your day (07:00–22:00 by default), minimum free-slot length, and categories. |
 

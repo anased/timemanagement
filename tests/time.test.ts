@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addDays, dayBounds, dayKeyOf, dragRange, formatDuration, fromLocalInput, toLocalInput, weekStart } from "@/lib/time";
+import { addDays, dayBounds, dayKeyOf, displayMinutes, dragRange, formatDuration, fromLocalInput, toLocalInput, weekStart } from "@/lib/time";
 
 describe("time helpers", () => {
   it("computes local day bounds across a DST change", () => {
@@ -50,5 +50,31 @@ describe("dragRange", () => {
   it("clamps to the visible range", () => {
     expect(iso(dragRange(at("21:50"), at("21:52"), bounds))).toEqual(["21:45", "22:00"]);
     expect(iso(dragRange(at("06:00"), at("07:40"), bounds))).toEqual(["07:00", "07:45"]);
+  });
+
+  describe("displayMinutes", () => {
+    const tz = "Europe/Berlin";
+    const at = (iso: string) => new Date(iso);
+
+    it("uses the day window when everything fits", () => {
+      const items: [Date, Date][] = [[at("2026-10-08T07:00:00Z"), at("2026-10-08T08:00:00Z")]]; // 09:00–10:00
+      expect(displayMinutes("2026-10-08", items, tz, [420, 1320])).toEqual([420, 1320]);
+    });
+
+    it("stretches to items outside the window, rounded to hours", () => {
+      const items: [Date, Date][] = [[at("2026-10-08T03:40:00Z"), at("2026-10-08T04:10:00Z")]]; // 05:40–06:10
+      expect(displayMinutes("2026-10-08", items, tz, [420, 1320])).toEqual([300, 1320]);
+    });
+
+    it("clamps items crossing midnight to the day", () => {
+      const items: [Date, Date][] = [[at("2026-10-08T20:30:00Z"), at("2026-10-09T01:00:00Z")]]; // 22:30–03:00 next day
+      expect(displayMinutes("2026-10-08", items, tz, [420, 1320])).toEqual([420, 1440]);
+      expect(displayMinutes("2026-10-09", items, tz, [420, 1320])).toEqual([0, 1320]);
+    });
+
+    it("ignores items on other days", () => {
+      const items: [Date, Date][] = [[at("2026-10-10T02:00:00Z"), at("2026-10-10T03:00:00Z")]];
+      expect(displayMinutes("2026-10-08", items, tz, [420, 1320])).toEqual([420, 1320]);
+    });
   });
 });
