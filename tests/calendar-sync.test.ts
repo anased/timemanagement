@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { deleteEvent, eventBody, pushEntry, shouldSync, type SyncableEntry } from "@/lib/calendar-sync";
-import { canWriteCalendar, normalizeEvent, planCalendarIds, WRITE_SCOPE } from "@/lib/google-calendar";
+import { calendarRoles, canWriteCalendar, normalizeEvent, WRITE_SCOPE } from "@/lib/google-calendar";
 
 const entry = (over: Partial<SyncableEntry> = {}): SyncableEntry => ({
   id: "entry1",
@@ -145,17 +145,19 @@ describe("keeping actual time out of the plan", () => {
   });
 
   it("never treats the Actual time calendar as a planning calendar", () => {
-    expect(planCalendarIds([], "actual@group")).toEqual(["primary"]);
+    expect(calendarRoles([], "actual@group")).toEqual({ plan: ["primary"], show: [], colors: {} });
     expect(
-      planCalendarIds(
+      calendarRoles(
         [
-          { calendarId: "work", enabled: true },
-          { calendarId: "actual@group", enabled: true },
-          { calendarId: "old", enabled: false },
+          { calendarId: "work", role: "PLAN", color: "#4f7cff" },
+          { calendarId: "actual@group", role: "PLAN" },
+          { calendarId: "family", role: "SHOW", color: "#e0a030" },
+          { calendarId: "actual@group", role: "SHOW" },
+          { calendarId: "old", role: "OFF", color: null },
         ],
         "actual@group",
       ),
-    ).toEqual(["work"]);
+    ).toEqual({ plan: ["work"], show: ["family"], colors: { work: "#4f7cff", family: "#e0a030" } });
   });
 
   it("detects the write permission", () => {

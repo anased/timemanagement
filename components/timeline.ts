@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import type { BlockStatus } from "@/lib/analytics";
 import { dragRange } from "@/lib/time";
-import type { BlockDTO } from "./types";
+import type { BlockDTO, ShownDTO } from "./types";
 
 export interface Positioned<T> {
   item: T;
@@ -51,6 +51,28 @@ export const STATUS_STYLE: Record<BlockStatus, string> = {
 
 export interface TimelineBlock extends BlockDTO {
   status: BlockStatus;
+}
+
+/**
+ * Lanes for the planned column: plan blocks and shown-only events are laid out
+ * together so overlapping ones sit side by side.
+ */
+export function planLanes(blocks: TimelineBlock[], shown: ShownDTO[]) {
+  type Item = { block: TimelineBlock; event?: never } | { event: ShownDTO; block?: never };
+  const items: Item[] = [...blocks.map((block) => ({ block })), ...shown.map((event) => ({ event }))];
+  const laid = layoutLanes(items, (i) => {
+    const x = i.block ?? i.event;
+    return [x.start.getTime(), x.end.getTime()];
+  });
+  return {
+    blockLanes: laid.flatMap((p) => (p.item.block ? [{ item: p.item.block, lane: p.lane, lanes: p.lanes }] : [])),
+    shownLanes: laid.flatMap((p) => (p.item.event ? [{ item: p.item.event, lane: p.lane, lanes: p.lanes }] : [])),
+  };
+}
+
+/** Background for a plan block: a light tint of its calendar colour. */
+export function blockTint(color: string | undefined): React.CSSProperties | undefined {
+  return color ? { background: `${color}1f` } : undefined;
 }
 
 /**

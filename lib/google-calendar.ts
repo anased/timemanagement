@@ -14,6 +14,19 @@ export interface PlannedEvent {
   htmlLink?: string;
 }
 
+/** A timed event from a "show only" calendar: displayed, never part of the plan. */
+export type ShownEvent = PlannedEvent;
+
+/** An all-day event, from `startDay` up to (not including) `endDay`. */
+export interface AllDayEvent {
+  id: string;
+  title: string;
+  calendarId: string;
+  startDay: string;
+  endDay: string;
+  htmlLink?: string;
+}
+
 export interface CalendarInfo {
   id: string;
   name: string;
@@ -65,6 +78,22 @@ export function normalizeEvent(raw: RawEvent, calendarId: string): PlannedEvent 
   };
 }
 
+/** All-day events (holidays, birthdays, trips), or null for anything else. */
+export function normalizeAllDay(raw: RawEvent, calendarId: string): AllDayEvent | null {
+  if (raw.status === "cancelled") return null;
+  if (!raw.start?.date || !raw.end?.date) return null;
+  if (raw.attendees?.some((a) => a.self && a.responseStatus === "declined")) return null;
+  if (!(raw.end.date > raw.start.date)) return null;
+  return {
+    id: raw.id,
+    title: raw.summary?.trim() || "(untitled)",
+    calendarId,
+    startDay: raw.start.date,
+    endDay: raw.end.date,
+    htmlLink: raw.htmlLink,
+  };
+}
+
 export class GoogleHttpError extends Error {
   constructor(
     public status: number,
@@ -105,6 +134,68 @@ function googleGet<T>(token: string, path: string, params: Record<string, string
   return googleFetch<T>(token, "GET", path, { params });
 }
 
+async function fetchRawEvents(token: string, calendarId: string, from: Date, to: Date): Promise<RawEvent[]> {
+  const raws: RawEvent[] = [];
+  let pageToken: string | undefined;
+  do {
+    const page = await googleGet<{ items?: RawEvent[]; nextPageToken?: string }>(
+      token,
+      `/calendars/${encodeURIComponent(calendarId)}/events`,
+      {
+        timeMin: from.toISOString(),
+        timeMax: to.toISOString(),
+        singleEvents: "true",
+        orderBy: "startTime",
+        maxResults: "250",
+        ...(pageToken ? { pageToken } : {}),
+      },
+    );
+    raws.push(...(page.items ?? []));
+    pageToken = page.nextPageToken;
+  } while (pageToken);
+  return raws;
+}
+
+const byStart = (a: { start: Date }, b: { start: Date }) => a.start.getTime() - b.start.getTime();
+
+/**
+ * Fetches each calendar once and sorts its events into timed plan blocks,
+ * timed events that are only shown, and all-day events (from both). An event
+ * on several calendars appears once, and counts as plan if any copy does.
+ */
+export async function fetchCalendars(
+  token: string,
+  roles: { plan: string[]; show: string[] },
+  from: Date,
+  to: Date,
+): Promise<{ events: PlannedEvent[]; shown: ShownEvent[]; allDay: AllDayEvent[] }> {
+  const calendars = [...roles.plan.map((id) => ({ id, plan: true })), ...roles.show.map((id) => ({ id, plan: false }))];
+  const raws = await Promise.all(calendars.map((c) => fetchRawEvents(token, c.id, from, to)));
+
+  const events = new Map<string, PlannedEvent>();
+  const shown = new Map<string, ShownEvent>();
+  const allDay = new Map<string, AllDayEvent>();
+  calendars.forEach((c, i) => {
+    for (const raw of raws[i]) {
+      const timed = normalizeEvent(raw, c.id);
+      if (timed) {
+        const target = c.plan ? events : shown;
+        if (!target.has(timed.id)) target.set(timed.id, timed);
+        continue;
+      }
+      const day = normalizeAllDay(raw, c.id);
+      if (day && !allDay.has(day.id)) allDay.set(day.id, day);
+    }
+  });
+  for (const id of events.keys()) shown.delete(id);
+
+  return {
+    events: [...events.values()].sort(byStart),
+    shown: [...shown.values()].sort(byStart),
+    allDay: [...allDay.values()].sort((a, b) => a.startDay.localeCompare(b.startDay) || a.title.localeCompare(b.title)),
+  };
+}
+
 /** Fetches planned events from several calendars, de-duplicated and sorted. */
 export async function fetchEvents(
   token: string,
@@ -112,38 +203,9 @@ export async function fetchEvents(
   from: Date,
   to: Date,
 ): Promise<PlannedEvent[]> {
-  const perCalendar = await Promise.all(
-    calendarIds.map(async (calendarId) => {
-      const events: PlannedEvent[] = [];
-      let pageToken: string | undefined;
-      do {
-        const page = await googleGet<{ items?: RawEvent[]; nextPageToken?: string }>(
-          token,
-          `/calendars/${encodeURIComponent(calendarId)}/events`,
-          {
-            timeMin: from.toISOString(),
-            timeMax: to.toISOString(),
-            singleEvents: "true",
-            orderBy: "startTime",
-            maxResults: "250",
-            ...(pageToken ? { pageToken } : {}),
-          },
-        );
-        for (const raw of page.items ?? []) {
-          const e = normalizeEvent(raw, calendarId);
-          if (e) events.push(e);
-        }
-        pageToken = page.nextPageToken;
-      } while (pageToken);
-      return events;
-    }),
-  );
-  const byId = new Map<string, PlannedEvent>();
-  for (const e of perCalendar.flat()) if (!byId.has(e.id)) byId.set(e.id, e);
-  return [...byId.values()].sort((a, b) => a.start.getTime() - b.start.getTime());
+  return (await fetchCalendars(token, { plan: calendarIds, show: [] }, from, to)).events;
 }
 
-/** Whether the user granted the scope that lets the app write to its own calendar. */
 export function canWriteCalendar(scope: string | null | undefined): boolean {
   return !!scope?.split(/\s+/).includes(WRITE_SCOPE);
 }
@@ -207,38 +269,64 @@ export async function listCalendars(userId: string): Promise<CalendarInfo[]> {
   }));
 }
 
+export interface CalendarRoles {
+  /** Calendars whose events count as the plan. */
+  plan: string[];
+  /** Calendars whose events are only displayed. */
+  show: string[];
+  /** Saved Google colour per calendar id. */
+  colors: Record<string, string>;
+}
+
 /**
- * Calendars whose events count as the plan. Defaults to the primary calendar.
- * The app's own "Actual time" calendar is never included.
+ * Which calendars are plan and which are only shown. With nothing saved the
+ * primary calendar is the plan. The app's own "Actual time" calendar is never
+ * included.
  */
-export async function selectedCalendarIds(userId: string): Promise<string[]> {
+export async function selectedCalendars(userId: string): Promise<CalendarRoles> {
   const [rows, user] = await Promise.all([
     prisma.calendarSelection.findMany({ where: { userId } }),
     prisma.user.findUnique({ where: { id: userId }, select: { actualCalendarId: true } }),
   ]);
-  return planCalendarIds(rows, user?.actualCalendarId ?? null);
+  return calendarRoles(rows, user?.actualCalendarId ?? null);
 }
 
-export function planCalendarIds(
-  rows: { calendarId: string; enabled: boolean }[],
+export function calendarRoles(
+  rows: { calendarId: string; role: "PLAN" | "SHOW" | "OFF"; color?: string | null }[],
   actualCalendarId: string | null,
-): string[] {
-  const ids = rows.length === 0 ? ["primary"] : rows.filter((r) => r.enabled).map((r) => r.calendarId);
-  return ids.filter((id) => id !== actualCalendarId);
+): CalendarRoles {
+  if (rows.length === 0) return { plan: ["primary"], show: [], colors: {} };
+  const ids = (role: string) => rows.filter((r) => r.role === role && r.calendarId !== actualCalendarId).map((r) => r.calendarId);
+  const colors: Record<string, string> = {};
+  for (const r of rows) if (r.color) colors[r.calendarId] = r.color;
+  return { plan: ids("PLAN"), show: ids("SHOW"), colors };
+}
+
+interface CalendarData {
+  events: PlannedEvent[];
+  shown: ShownEvent[];
+  allDay: AllDayEvent[];
+  colors: Record<string, string>;
 }
 
 export type PlannedResult =
-  | { ok: true; events: PlannedEvent[] }
-  | { ok: false; reason: "auth" | "error"; message: string; events: PlannedEvent[] };
+  | ({ ok: true } & CalendarData)
+  | ({ ok: false; reason: "auth" | "error"; message: string } & CalendarData);
 
-/** Planned events for the user in [from, to). Never throws, so pages can still render tracking data. */
+const EMPTY: CalendarData = { events: [], shown: [], allDay: [], colors: {} };
+
+/**
+ * Planned events for the user in [from, to), plus events from "show only"
+ * calendars and all-day events. Never throws, so pages can still render
+ * tracking data.
+ */
 export async function getPlannedEvents(userId: string, from: Date, to: Date): Promise<PlannedResult> {
   try {
-    const [token, ids] = await Promise.all([getAccessToken(userId), selectedCalendarIds(userId)]);
-    if (ids.length === 0) return { ok: true, events: [] };
-    return { ok: true, events: await fetchEvents(token, ids, from, to) };
+    const [token, roles] = await Promise.all([getAccessToken(userId), selectedCalendars(userId)]);
+    if (roles.plan.length + roles.show.length === 0) return { ok: true, ...EMPTY, colors: roles.colors };
+    return { ok: true, ...(await fetchCalendars(token, roles, from, to)), colors: roles.colors };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    return { ok: false, reason: err instanceof CalendarAuthError ? "auth" : "error", message, events: [] };
+    return { ok: false, reason: err instanceof CalendarAuthError ? "auth" : "error", message, ...EMPTY };
   }
 }

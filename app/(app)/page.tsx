@@ -7,7 +7,7 @@ import { EntryDialogProvider } from "@/components/EntryDialog";
 import { GapList } from "@/components/GapList";
 import { LogTimeButton } from "@/components/LogTimeButton";
 import { StatTiles } from "@/components/StatTiles";
-import { loadPeriod } from "@/lib/period";
+import { calendarView, loadPeriod } from "@/lib/period";
 import { currentScope } from "@/lib/session";
 import { addDays, formatDay, isDayKey, todayKey } from "@/lib/time";
 
@@ -24,15 +24,16 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
   const [analysis] = data.days;
   const { now, categories } = data;
 
-  const blocks = analysis.planned.map((p) => ({ id: p.id, title: p.title, start: p.start, end: p.end, htmlLink: p.htmlLink }));
-  const statusById = new Map(analysis.comparisons.map((c) => [c.block.id, c.status]));
-  const checkIns = blocks.filter((b) => statusById.get(b.id) === "UNREVIEWED");
+  const view = calendarView(analysis, data.calendarColors);
+  const blocks = view.blocks;
+  const checkIns = blocks.filter((b) => b.status === "UNREVIEWED");
 
   // Show the whole day window, stretched to include anything outside it.
   const times = [
     analysis.window.start,
     analysis.window.end,
     ...blocks.flatMap((b) => [b.start, b.end]),
+    ...view.shown.flatMap((e) => [e.start, e.end]),
     ...data.entries.flatMap((e) => [e.start, e.end ?? now]),
   ].map((d) => Math.min(Math.max(d.getTime(), analysis.range.start.getTime()), analysis.range.end.getTime()));
   const hour = 3600_000;
@@ -67,7 +68,9 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
         <DayTimeline
           displayStart={displayStart}
           displayEnd={displayEnd}
-          blocks={blocks.map((b) => ({ ...b, status: statusById.get(b.id) ?? "UPCOMING" }))}
+          blocks={view.blocks}
+          shown={view.shown}
+          allDay={view.allDay}
           entries={data.entries}
           slots={analysis.gaps.map((g) => g.slot)}
           categories={categories}

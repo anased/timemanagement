@@ -28,44 +28,73 @@ function useAction() {
   return { pending, run, status };
 }
 
+type CalendarRole = "PLAN" | "SHOW" | "OFF";
+
+const ROLES: { value: CalendarRole; label: string; hint: string }[] = [
+  { value: "PLAN", label: "Plan", hint: "Events count as your plan" },
+  { value: "SHOW", label: "Show", hint: "Events are shown but don't count" },
+  { value: "OFF", label: "Off", hint: "Hidden" },
+];
+
 export function CalendarsForm({
   calendars,
 }: {
-  calendars: { id: string; name: string; primary: boolean; color?: string; enabled: boolean }[];
+  calendars: { id: string; name: string; primary: boolean; color?: string; role: CalendarRole }[];
 }) {
-  const [enabled, setEnabled] = useState(() => new Set(calendars.filter((c) => c.enabled).map((c) => c.id)));
+  const [roles, setRoles] = useState(() => new Map(calendars.map((c) => [c.id, c.role])));
   const { pending, run, status } = useAction();
   if (calendars.length === 0) return <p className="text-sm text-muted">No calendars found.</p>;
 
-  function toggle(id: string) {
-    setEnabled((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  function setRole(id: string, role: CalendarRole) {
+    setRoles((prev) => new Map(prev).set(id, role));
   }
 
   return (
     <div className="space-y-3">
-      <ul className="space-y-1.5">
-        {calendars.map((c) => (
-          <li key={c.id}>
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={enabled.has(c.id)} onChange={() => toggle(c.id)} />
-              <span className="h-2.5 w-2.5 rounded-full" style={{ background: c.color ?? "#8a8a85" }} />
-              {c.name}
-              {c.primary && <span className="text-xs text-muted">(primary)</span>}
-            </label>
-          </li>
-        ))}
+      <ul className="divide-y divide-line">
+        {calendars.map((c) => {
+          const current = roles.get(c.id) ?? "OFF";
+          return (
+            <li key={c.id} className="flex flex-wrap items-center gap-2 py-1.5 text-sm">
+              <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: c.color ?? "#8a8a85" }} />
+              <span className={`min-w-0 flex-1 truncate ${current === "OFF" ? "text-muted" : ""}`}>
+                {c.name}
+                {c.primary && <span className="text-xs text-muted"> (primary)</span>}
+              </span>
+              <div className="flex rounded-lg border border-line p-0.5 text-xs" role="radiogroup" aria-label={`${c.name} calendar`}>
+                {ROLES.map((r) => (
+                  <button
+                    key={r.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={current === r.value}
+                    title={r.hint}
+                    className={`rounded-md px-2 py-0.5 font-medium ${current === r.value ? "bg-accent/10 text-accent" : "text-muted hover:text-fg"}`}
+                    onClick={() => setRole(c.id, r.value)}
+                  >
+                    {r.label}
+                  </button>
+                ))}
+              </div>
+            </li>
+          );
+        })}
       </ul>
       <div className="flex items-center gap-3">
         <button
           className="btn-primary"
           disabled={pending}
           onClick={() =>
-            run(() => saveCalendars(calendars.map((c) => ({ calendarId: c.id, name: c.name, enabled: enabled.has(c.id) }))))
+            run(() =>
+              saveCalendars(
+                calendars.map((c) => ({
+                  calendarId: c.id,
+                  name: c.name,
+                  role: roles.get(c.id) ?? "OFF",
+                  color: c.color && /^#[0-9a-fA-F]{6}$/.test(c.color) ? c.color : null,
+                })),
+              ),
+            )
           }
         >
           Save calendars

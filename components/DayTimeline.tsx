@@ -4,8 +4,9 @@ import { useTransition } from "react";
 import { startTimer } from "@/app/actions/entries";
 import { formatDuration, formatTime } from "@/lib/time";
 import { useEntryDialog } from "./EntryDialog";
-import { layoutLanes, STATUS_STYLE, useDragToLog, type TimelineBlock } from "./timeline";
-import type { CategoryDTO, EntryDTO } from "./types";
+import { AllDayStrip, ShownBox } from "./CalendarBits";
+import { blockTint, layoutLanes, planLanes, STATUS_STYLE, useDragToLog, type TimelineBlock } from "./timeline";
+import type { AllDayDTO, CategoryDTO, EntryDTO, ShownDTO } from "./types";
 import { useNow } from "./useNow";
 
 const PX_PER_MIN = 1.1;
@@ -14,6 +15,8 @@ export function DayTimeline({
   displayStart,
   displayEnd,
   blocks,
+  shown,
+  allDay,
   entries,
   slots,
   categories,
@@ -22,6 +25,9 @@ export function DayTimeline({
   displayStart: Date;
   displayEnd: Date;
   blocks: TimelineBlock[];
+  /** Events from "show only" calendars. */
+  shown: ShownDTO[];
+  allDay: AllDayDTO[];
   entries: EntryDTO[];
   slots: { start: Date; end: Date }[];
   categories: CategoryDTO[];
@@ -44,7 +50,7 @@ export function DayTimeline({
   }
 
   const entryEnd = (e: EntryDTO) => e.end ?? (now > e.start ? now : e.start);
-  const blockLanes = layoutLanes(blocks, (b) => [b.start.getTime(), b.end.getTime()]);
+  const { blockLanes, shownLanes } = planLanes(blocks, shown);
   const entryLanes = layoutLanes(entries, (e) => [e.start.getTime(), entryEnd(e).getTime()]);
   const showNow = now >= displayStart && now <= displayEnd;
 
@@ -71,6 +77,7 @@ export function DayTimeline({
           Actual <span className="font-normal opacity-70">· drag to log</span>
         </div>
       </div>
+      <AllDayStrip items={allDay} className="border-b border-line py-1.5 pl-12 pr-2" />
       <div className="relative grid grid-cols-[3rem_1fr_1fr]" style={{ height: totalMin * PX_PER_MIN }}>
         {/* hour grid */}
         {hours.map((hr) => (
@@ -105,11 +112,25 @@ export function DayTimeline({
               </span>
             </button>
           ))}
+          {shownLanes.map(({ item: e, lane, lanes }) => (
+            <ShownBox
+              key={e.id}
+              event={e}
+              timeZone={timeZone}
+              style={{
+                top: y(e.start),
+                height: h(e.start, e.end),
+                left: `calc(${(lane / lanes) * 100}% + 4px)`,
+                width: `calc(${100 / lanes}% - 8px)`,
+              }}
+            />
+          ))}
           {blockLanes.map(({ item: b, lane, lanes }) => (
             <div
               key={b.id}
-              className={`absolute overflow-hidden rounded-md border-l-4 bg-accent/10 px-1.5 py-0.5 text-xs ${STATUS_STYLE[b.status]}`}
+              className={`absolute overflow-hidden rounded-md border-l-4 px-1.5 py-0.5 text-xs ${b.color ? "" : "bg-accent/10"} ${STATUS_STYLE[b.status]}`}
               style={{
+                ...blockTint(b.color),
                 top: y(b.start),
                 height: h(b.start, b.end),
                 left: `calc(${(lane / lanes) * 100}% + 4px)`,

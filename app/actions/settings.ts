@@ -48,7 +48,15 @@ export async function syncTimeZone(timeZone: string): Promise<ActionResult> {
 }
 
 const calendarsSchema = z.array(
-  z.object({ calendarId: z.string().min(1), name: z.string(), enabled: z.boolean() }),
+  z.object({
+    calendarId: z.string().min(1),
+    name: z.string(),
+    role: z.enum(["PLAN", "SHOW", "OFF"]),
+    color: z
+      .string()
+      .regex(/^#[0-9a-fA-F]{6}$/)
+      .nullish(),
+  }),
 );
 
 export async function saveCalendars(input: z.input<typeof calendarsSchema>): Promise<ActionResult> {
