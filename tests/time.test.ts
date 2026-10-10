@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addDays, dayBounds, dayKeyOf, formatDuration, fromLocalInput, toLocalInput, weekStart } from "@/lib/time";
+import { addDays, dayBounds, dayKeyOf, dragRange, formatDuration, fromLocalInput, toLocalInput, weekStart } from "@/lib/time";
 
 describe("time helpers", () => {
   it("computes local day bounds across a DST change", () => {
@@ -27,5 +27,28 @@ describe("time helpers", () => {
     expect(formatDuration(60)).toBe("1h");
     expect(formatDuration(95)).toBe("1h 35m");
     expect(formatDuration(-20)).toBe("-20m");
+  });
+});
+
+describe("dragRange", () => {
+  const at = (hhmm: string) => new Date(`2026-10-08T${hhmm}:00Z`).getTime();
+  const bounds = { min: at("07:00"), max: at("22:00") };
+  const iso = (r: { start: Date; end: Date }) => [r.start.toISOString().slice(11, 16), r.end.toISOString().slice(11, 16)];
+
+  it("snaps a downward drag to 15 minutes", () => {
+    expect(iso(dragRange(at("09:10"), at("10:20"), bounds))).toEqual(["09:15", "10:15"]);
+  });
+
+  it("handles dragging upwards", () => {
+    expect(iso(dragRange(at("10:20"), at("09:10"), bounds))).toEqual(["09:15", "10:15"]);
+  });
+
+  it("turns a click into a 30-minute range from the clicked step", () => {
+    expect(iso(dragRange(at("09:52"), at("09:55"), bounds))).toEqual(["09:45", "10:15"]);
+  });
+
+  it("clamps to the visible range", () => {
+    expect(iso(dragRange(at("21:50"), at("21:52"), bounds))).toEqual(["21:45", "22:00"]);
+    expect(iso(dragRange(at("06:00"), at("07:40"), bounds))).toEqual(["07:00", "07:45"]);
   });
 });

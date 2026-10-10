@@ -19,7 +19,7 @@ Notion Calendar has no public API. It works on top of your Google Calendar accou
 |---|---|
 | **Timer bar** (every page) | **▶ New task** asks what you're working on (with one-tap chips for the planned block happening now and your recent tasks) and starts the clock. **✓ Done** asks for the category, a note and the planned block it counts towards, then saves it. Starting a new task while one runs saves the current one. The timer lives in the database, so it survives refreshes and works across devices. |
 | **Actual time calendar** | Finished tasks (and time you log or edit) are copied to an "Actual time" Google calendar the app creates, so they show up next to your plan in Google and Notion Calendar. Your planning calendars are never written to. You can switch this off in Settings. |
-| **Today** | Planned and actual side by side on one time axis. ▶ on a block starts a timer linked to it; **+** logs time against it. Click a free slot to log what you did there, or click an entry to edit or delete it. |
+| **Today** | Planned and actual side by side on one time axis. ▶ on a block starts a timer linked to it; **+** logs time against it. Click a free slot to log what you did there, click or drag on empty space in the Actual column to log that time range (snapped to 15 minutes), or click an entry to edit or delete it. |
 | **Check in** | Lists past blocks with nothing tracked. One tap: *As planned*, *Partly* (adjust the times), *Something else* (say what), or *Skipped*. |
 | **Free time** | Each gap between blocks, broken down into the activities tracked in it plus untracked time. |
 | **Plan vs. actual table** | Planned vs. actual minutes, difference, start drift, status, and what happened "meanwhile" for each block. |
