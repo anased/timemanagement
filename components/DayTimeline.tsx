@@ -1,62 +1,14 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useTransition } from "react";
 import { startTimer } from "@/app/actions/entries";
-import type { BlockStatus } from "@/lib/analytics";
-import { dragRange, formatDuration, formatTime } from "@/lib/time";
+import { formatDuration, formatTime } from "@/lib/time";
 import { useEntryDialog } from "./EntryDialog";
-import type { BlockDTO, CategoryDTO, EntryDTO } from "./types";
+import { layoutLanes, STATUS_STYLE, useDragToLog, type TimelineBlock } from "./timeline";
+import type { CategoryDTO, EntryDTO } from "./types";
 import { useNow } from "./useNow";
 
 const PX_PER_MIN = 1.1;
-
-interface Positioned<T> {
-  item: T;
-  lane: number;
-  lanes: number;
-}
-
-/** Side-by-side lanes for overlapping items. */
-function layoutLanes<T>(items: T[], range: (t: T) => [number, number]): Positioned<T>[] {
-  const sorted = [...items].sort((a, b) => range(a)[0] - range(b)[0]);
-  const out: Positioned<T>[] = [];
-  let cluster: Positioned<T>[] = [];
-  let laneEnds: number[] = [];
-  let clusterEnd = -Infinity;
-  const flush = () => {
-    for (const p of cluster) p.lanes = laneEnds.length;
-    cluster = [];
-    laneEnds = [];
-  };
-  for (const item of sorted) {
-    const [s, e] = range(item);
-    if (s >= clusterEnd) flush();
-    let lane = laneEnds.findIndex((end) => end <= s);
-    if (lane === -1) lane = laneEnds.push(e) - 1;
-    else laneEnds[lane] = e;
-    const p = { item, lane, lanes: 1 };
-    cluster.push(p);
-    out.push(p);
-    clusterEnd = Math.max(clusterEnd, e);
-  }
-  flush();
-  return out;
-}
-
-const STATUS_STYLE: Record<BlockStatus, string> = {
-  DONE: "border-emerald-500",
-  TRACKED: "border-emerald-500",
-  PARTIAL: "border-amber-500",
-  IN_PROGRESS: "border-red-500",
-  SKIPPED: "border-neutral-400 opacity-60 line-through",
-  REPLACED: "border-orange-500 opacity-70",
-  UNREVIEWED: "border-dashed border-neutral-400",
-  UPCOMING: "border-accent",
-};
-
-export interface TimelineBlock extends BlockDTO {
-  status: BlockStatus;
-}
 
 export function DayTimeline({
   displayStart,
@@ -78,7 +30,6 @@ export function DayTimeline({
   const now = useNow(30_000);
   const dialog = useEntryDialog();
   const [pending, startTransition] = useTransition();
-  const [drag, setDrag] = useState<{ anchor: number; current: number } | null>(null);
   const t0 = displayStart.getTime();
   const totalMin = (displayEnd.getTime() - t0) / 60000;
   const y = (d: Date) => Math.max(0, Math.min(totalMin, (d.getTime() - t0) / 60000)) * PX_PER_MIN;
@@ -98,41 +49,12 @@ export function DayTimeline({
   const showNow = now >= displayStart && now <= displayEnd;
 
   // Click or drag on empty space in the actual column to log that range.
-  const range = (a: number, c: number) => dragRange(a, c, { min: t0, max: displayEnd.getTime() });
-  const timeAt = (e: React.PointerEvent<HTMLElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    return t0 + Math.max(0, Math.min(totalMin, (e.clientY - rect.top) / PX_PER_MIN)) * 60000;
-  };
-  const preview = drag && range(drag.anchor, drag.current);
-
-  useEffect(() => {
-    if (!drag) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setDrag(null);
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [drag]);
-
-  function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
-    if (e.button !== 0 || e.target !== e.currentTarget) return;
-    const t = timeAt(e);
-    // Touch keeps scrolling the page; a tap still logs half an hour.
-    if (e.pointerType !== "touch") {
-      e.currentTarget.setPointerCapture(e.pointerId);
-      e.preventDefault();
-    }
-    setDrag({ anchor: t, current: t });
-  }
-
-  function onPointerMove(e: React.PointerEvent<HTMLDivElement>) {
-    if (drag && e.pointerType !== "touch") setDrag({ ...drag, current: timeAt(e) });
-  }
-
-  function onPointerUp() {
-    if (!drag) return;
-    const { start, end } = range(drag.anchor, drag.current);
-    setDrag(null);
-    dialog.open({ title: "", start, end, categoryId: null, plannedEventId: null });
-  }
+  const { preview, handlers } = useDragToLog({
+    t0,
+    t1: displayEnd.getTime(),
+    pxPerMin: PX_PER_MIN,
+    onRange: ({ start, end }) => dialog.open({ title: "", start, end, categoryId: null, plannedEventId: null }),
+  });
 
   function startFromBlock(b: TimelineBlock) {
     startTransition(async () => {
@@ -228,10 +150,7 @@ export function DayTimeline({
           <div
             className="absolute inset-0 cursor-crosshair select-none"
             style={{ touchAction: "pan-y" }}
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={onPointerUp}
-            onPointerCancel={() => setDrag(null)}
+            {...handlers}
             title="Click or drag to log time"
           />
           {entryLanes.map(({ item: e, lane, lanes }) => {
