@@ -90,3 +90,30 @@ export function isValidTimeZone(tz: string): boolean {
     return false;
   }
 }
+
+/**
+ * Time range picked by dragging on a timeline, snapped to `stepMin` minutes on
+ * the absolute clock. A drag shorter than one step counts as a click and gives
+ * `clickMin` minutes from the clicked step. Clamped to [min, max].
+ */
+export function dragRange(
+  anchor: number,
+  current: number,
+  { min, max, stepMin = 15, clickMin = 30 }: { min: number; max: number; stepMin?: number; clickMin?: number },
+): { start: Date; end: Date } {
+  const step = stepMin * 60_000;
+  const lo = Math.min(anchor, current);
+  const hi = Math.max(anchor, current);
+  let start: number;
+  let end: number;
+  if (hi - lo < step) {
+    start = Math.floor(anchor / step) * step;
+    end = start + clickMin * 60_000;
+  } else {
+    start = Math.round(lo / step) * step;
+    end = Math.round(hi / step) * step;
+  }
+  end = Math.min(end, max);
+  start = Math.max(min, Math.min(start, end - step));
+  return { start: new Date(start), end: new Date(Math.max(end, start + step)) };
+}

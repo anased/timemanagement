@@ -1,9 +1,9 @@
 "use client";
 
-import { useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { startTimer } from "@/app/actions/entries";
 import type { BlockStatus } from "@/lib/analytics";
-import { formatDuration, formatTime } from "@/lib/time";
+import { dragRange, formatDuration, formatTime } from "@/lib/time";
 import { useEntryDialog } from "./EntryDialog";
 import type { BlockDTO, CategoryDTO, EntryDTO } from "./types";
 import { useNow } from "./useNow";
@@ -78,6 +78,7 @@ export function DayTimeline({
   const now = useNow(30_000);
   const dialog = useEntryDialog();
   const [pending, startTransition] = useTransition();
+  const [drag, setDrag] = useState<{ anchor: number; current: number } | null>(null);
   const t0 = displayStart.getTime();
   const totalMin = (displayEnd.getTime() - t0) / 60000;
   const y = (d: Date) => Math.max(0, Math.min(totalMin, (d.getTime() - t0) / 60000)) * PX_PER_MIN;
@@ -96,6 +97,43 @@ export function DayTimeline({
   const entryLanes = layoutLanes(entries, (e) => [e.start.getTime(), entryEnd(e).getTime()]);
   const showNow = now >= displayStart && now <= displayEnd;
 
+  // Click or drag on empty space in the actual column to log that range.
+  const range = (a: number, c: number) => dragRange(a, c, { min: t0, max: displayEnd.getTime() });
+  const timeAt = (e: React.PointerEvent<HTMLElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    return t0 + Math.max(0, Math.min(totalMin, (e.clientY - rect.top) / PX_PER_MIN)) * 60000;
+  };
+  const preview = drag && range(drag.anchor, drag.current);
+
+  useEffect(() => {
+    if (!drag) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setDrag(null);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [drag]);
+
+  function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    if (e.button !== 0 || e.target !== e.currentTarget) return;
+    const t = timeAt(e);
+    // Touch keeps scrolling the page; a tap still logs half an hour.
+    if (e.pointerType !== "touch") {
+      e.currentTarget.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    }
+    setDrag({ anchor: t, current: t });
+  }
+
+  function onPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (drag && e.pointerType !== "touch") setDrag({ ...drag, current: timeAt(e) });
+  }
+
+  function onPointerUp() {
+    if (!drag) return;
+    const { start, end } = range(drag.anchor, drag.current);
+    setDrag(null);
+    dialog.open({ title: "", start, end, categoryId: null, plannedEventId: null });
+  }
+
   function startFromBlock(b: TimelineBlock) {
     startTransition(async () => {
       await startTimer({ title: b.title, planned: { id: b.id, title: b.title, start: b.start, end: b.end } });
@@ -107,7 +145,9 @@ export function DayTimeline({
       <div className="grid grid-cols-[3rem_1fr_1fr] border-b border-line text-xs font-medium text-muted">
         <div />
         <div className="px-2 py-2">Planned</div>
-        <div className="border-l border-line px-2 py-2">Actual</div>
+        <div className="border-l border-line px-2 py-2">
+          Actual <span className="font-normal opacity-70">· drag to log</span>
+        </div>
       </div>
       <div className="relative grid grid-cols-[3rem_1fr_1fr]" style={{ height: totalMin * PX_PER_MIN }}>
         {/* hour grid */}
@@ -185,6 +225,15 @@ export function DayTimeline({
 
         {/* actual column */}
         <div className="relative border-l border-line">
+          <div
+            className="absolute inset-0 cursor-crosshair select-none"
+            style={{ touchAction: "pan-y" }}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={() => setDrag(null)}
+            title="Click or drag to log time"
+          />
           {entryLanes.map(({ item: e, lane, lanes }) => {
             const end = entryEnd(e);
             const color = colorOf(e.categoryId);
@@ -214,6 +263,15 @@ export function DayTimeline({
               </button>
             );
           })}
+          {preview && (
+            <div
+              className="pointer-events-none absolute inset-x-1 z-20 rounded-md border border-dashed border-accent bg-accent/20 px-1.5 py-0.5 text-[11px] font-medium"
+              style={{ top: y(preview.start), height: h(preview.start, preview.end) }}
+            >
+              {formatTime(preview.start, timeZone)}–{formatTime(preview.end, timeZone)} ·{" "}
+              {formatDuration((preview.end.getTime() - preview.start.getTime()) / 60000)}
+            </div>
+          )}
         </div>
 
         {showNow && (
