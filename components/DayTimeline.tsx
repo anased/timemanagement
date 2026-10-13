@@ -5,7 +5,8 @@ import { startTimer } from "@/app/actions/entries";
 import { formatDuration, formatTime } from "@/lib/time";
 import { useEntryDialog } from "./EntryDialog";
 import { AllDayStrip, ShownBox } from "./CalendarBits";
-import { blockTint, layoutLanes, planLanes, STATUS_STYLE, useDragToLog, type TimelineBlock } from "./timeline";
+import { DraggableEntry } from "./DraggableEntry";
+import { blockTint, layoutLanes, planLanes, STATUS_STYLE, useDragToLog, useEntryDrag, type TimelineBlock } from "./timeline";
 import type { AllDayDTO, CategoryDTO, EntryDTO, ShownDTO } from "./types";
 import { useNow } from "./useNow";
 
@@ -60,6 +61,14 @@ export function DayTimeline({
     t1: displayEnd.getTime(),
     pxPerMin: PX_PER_MIN,
     onRange: ({ start, end }) => dialog.open({ title: "", start, end, categoryId: null, plannedEventId: null }),
+  });
+  // Drag an entry (or its edges) to change its times; a click opens it.
+  const entryDrag = useEntryDrag({
+    pxPerMin: PX_PER_MIN,
+    min: t0,
+    max: displayEnd.getTime(),
+    now,
+    onClick: (e) => dialog.open({ ...e }),
   });
 
   function startFromBlock(b: TimelineBlock) {
@@ -175,32 +184,33 @@ export function DayTimeline({
             title="Click or drag to log time"
           />
           {entryLanes.map(({ item: e, lane, lanes }) => {
-            const end = entryEnd(e);
+            const { start, end } = entryDrag.times(e);
             const color = colorOf(e.categoryId);
             return (
-              <button
+              <DraggableEntry
                 key={e.id}
-                className="absolute overflow-hidden rounded-md border-l-4 px-1.5 py-0.5 text-left text-xs hover:brightness-95"
+                entry={e}
+                drag={entryDrag}
+                className="overflow-hidden rounded-md border-l-4 px-1.5 py-0.5 text-left text-xs hover:brightness-95"
                 style={{
-                  top: y(e.start),
-                  height: h(e.start, end),
+                  top: y(start),
+                  height: h(start, end),
                   left: `calc(${(lane / lanes) * 100}% + 4px)`,
                   width: `calc(${100 / lanes}% - 8px)`,
                   borderColor: color,
                   background: `${color}22`,
                 }}
-                onClick={() => dialog.open({ ...e })}
               >
                 <div className="truncate font-medium">
                   {e.end === null && "● "}
                   {e.title}
                 </div>
                 <div className="truncate text-[10px] text-muted">
-                  {formatTime(e.start, timeZone)}–{e.end ? formatTime(e.end, timeZone) : "now"} ·{" "}
-                  {formatDuration((end.getTime() - e.start.getTime()) / 60000)}
+                  {formatTime(start, timeZone)}–{e.end ? formatTime(end, timeZone) : "now"} ·{" "}
+                  {formatDuration((end.getTime() - start.getTime()) / 60000)}
                   {e.plannedEventId ? "" : " · unplanned"}
                 </div>
-              </button>
+              </DraggableEntry>
             );
           })}
           {preview && (

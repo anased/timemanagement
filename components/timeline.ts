@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useTransition } from "react";
+import { retimeEntry } from "@/app/actions/entries";
 import type { BlockStatus } from "@/lib/analytics";
-import { dragRange } from "@/lib/time";
-import type { BlockDTO, ShownDTO } from "./types";
+import { adjustRange, dragRange } from "@/lib/time";
+import type { BlockDTO, EntryDTO, ShownDTO } from "./types";
 
 export interface Positioned<T> {
   item: T;
@@ -132,4 +133,128 @@ export function useDragToLog({
     preview: drag && range(drag.anchor, drag.current),
     handlers: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel: () => setDrag(null) },
   };
+}
+
+type EntryDragMode = "start" | "end" | "move";
+
+interface EntryDrag {
+  id: string;
+  mode: EntryDragMode;
+  pointerType: string;
+  y0: number;
+  orig: { start: Date; end: Date };
+  current: { start: Date; end: Date };
+  moved: boolean;
+}
+
+/** Pointer travel (px) before a press counts as a drag rather than a click. */
+const DRAG_THRESHOLD = 4;
+
+/**
+ * Drag a tracked entry's top edge, bottom edge or body to change its start,
+ * end or both, snapped to 15 minutes and kept inside [min, max]. A press
+ * without movement calls `onClick`. A running entry can only have its start
+ * moved. Escape cancels; failed saves revert.
+ */
+export function useEntryDrag({
+  pxPerMin,
+  min,
+  max,
+  now,
+  onClick,
+}: {
+  pxPerMin: number;
+  min: number;
+  max: number;
+  now: Date;
+  onClick: (entry: EntryDTO) => void;
+}) {
+  const [drag, setDrag] = useState<EntryDrag | null>(null);
+  // Times saved by a drag, shown until the refreshed entry arrives from the server.
+  const [saved, setSaved] = useState<Map<string, { from: [number, number | null]; to: { start: Date; end: Date } }>>(
+    () => new Map(),
+  );
+  const [, startTransition] = useTransition();
+
+  useEffect(() => {
+    if (!drag) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setDrag(null);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [drag]);
+
+  const visualEnd = (e: EntryDTO) => e.end ?? (now > e.start ? now : e.start);
+
+  /** Where to draw `entry` right now: the drag preview, a just-saved time, or its own times. */
+  function times(entry: EntryDTO): { start: Date; end: Date } {
+    if (drag?.id === entry.id && drag.moved) return drag.current;
+    const s = saved.get(entry.id);
+    if (s && s.from[0] === entry.start.getTime() && s.from[1] === (entry.end?.getTime() ?? null)) return s.to;
+    return { start: entry.start, end: visualEnd(entry) };
+  }
+
+  function save(entry: EntryDTO, to: { start: Date; end: Date }) {
+    const from: [number, number | null] = [entry.start.getTime(), entry.end?.getTime() ?? null];
+    setSaved((prev) => new Map(prev).set(entry.id, { from, to }));
+    startTransition(async () => {
+      let error: string | null;
+      try {
+        const res = await retimeEntry({ id: entry.id, start: to.start, end: entry.end === null ? null : to.end });
+        error = res.ok ? null : res.error;
+      } catch {
+        error = "Couldn't save the new time. Check your connection and try again.";
+      }
+      if (error) {
+        setSaved((prev) => {
+          const next = new Map(prev);
+          next.delete(entry.id);
+          return next;
+        });
+        alert(error);
+      }
+    });
+  }
+
+  /** Pointer handlers for an entry's top edge ("start"), bottom edge ("end") or body ("move"). */
+  function bind(entry: EntryDTO, mode: EntryDragMode) {
+    // A running entry has no end yet, so it can't be moved or stretched.
+    const draggable = entry.end !== null || mode === "start";
+    return {
+      onPointerDown(e: React.PointerEvent<HTMLElement>) {
+        if (e.button !== 0) return;
+        e.stopPropagation();
+        // On touch the body keeps scrolling the page (a tap still opens the entry); the edges drag.
+        if (draggable && (e.pointerType !== "touch" || mode !== "move")) {
+          e.currentTarget.setPointerCapture(e.pointerId);
+          e.preventDefault();
+        }
+        const orig = times(entry);
+        setDrag({ id: entry.id, mode, pointerType: e.pointerType, y0: e.clientY, orig, current: orig, moved: false });
+      },
+      onPointerMove(e: React.PointerEvent<HTMLElement>) {
+        if (!drag || drag.id !== entry.id) return;
+        e.stopPropagation();
+        if (!draggable || (drag.pointerType === "touch" && drag.mode === "move")) return;
+        const dy = e.clientY - drag.y0;
+        const moved = drag.moved || Math.abs(dy) >= DRAG_THRESHOLD;
+        const current = adjustRange(drag.mode, drag.orig, (dy / pxPerMin) * 60_000, { min, max });
+        setDrag({ ...drag, moved, current });
+      },
+      onPointerUp(e: React.PointerEvent<HTMLElement>) {
+        if (!drag || drag.id !== entry.id) return;
+        e.stopPropagation();
+        setDrag(null);
+        if (!drag.moved) return onClick(entry);
+        const { current, orig } = drag;
+        if (current.start.getTime() !== orig.start.getTime() || current.end.getTime() !== orig.end.getTime()) {
+          save(entry, current);
+        }
+      },
+      onPointerCancel() {
+        setDrag(null);
+      },
+    };
+  }
+
+  return { bind, times, open: onClick, draggingId: drag?.moved ? drag.id : null };
 }

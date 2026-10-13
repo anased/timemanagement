@@ -148,3 +148,35 @@ export function displayMinutes(
   }
   return [Math.max(0, Math.floor(lo / 60) * 60), Math.min(24 * 60, Math.ceil(hi / 60) * 60)];
 }
+
+/**
+ * New [start, end] after dragging an entry's top edge ("start"), bottom edge
+ * ("end") or body ("move") by `deltaMs`. The moved edge (or, for a move, the
+ * start) snaps to `stepMin` minutes on the absolute clock. At least one step
+ * long, and kept inside [min, max]; a move keeps its length.
+ */
+export function adjustRange(
+  mode: "start" | "end" | "move",
+  orig: { start: Date; end: Date },
+  deltaMs: number,
+  { min, max, stepMin = 15 }: { min: number; max: number; stepMin?: number },
+): { start: Date; end: Date } {
+  const step = stepMin * 60_000;
+  // A drag shorter than half a step leaves the entry exactly as it was.
+  if (Math.abs(deltaMs) < step / 2) return { start: orig.start, end: orig.end };
+  const s0 = orig.start.getTime();
+  const e0 = orig.end.getTime();
+  const snap = (t: number) => Math.round(t / step) * step;
+  let start = s0;
+  let end = e0;
+  if (mode === "move") {
+    const len = e0 - s0;
+    start = Math.max(min, Math.min(snap(s0 + deltaMs), max - len));
+    end = start + len;
+  } else if (mode === "start") {
+    start = Math.max(min, Math.min(snap(s0 + deltaMs), e0 - step));
+  } else {
+    end = Math.min(max, Math.max(snap(e0 + deltaMs), s0 + step));
+  }
+  return { start: new Date(start), end: new Date(end) };
+}
