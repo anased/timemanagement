@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { z } from "zod";
 import { syncEntry, unsyncEntry } from "@/lib/calendar-sync";
+import { NotFoundError } from "@/lib/db-scoped";
 import { getPlannedEvents } from "@/lib/google-calendar";
 import { currentScope } from "@/lib/session";
 import { fromLocalInput } from "@/lib/time";
@@ -152,6 +153,28 @@ export async function saveEntry(input: z.input<typeof entrySchema>): Promise<Act
     }
     const savedId = id;
     after(() => syncEntry(scope.userId, savedId));
+    revalidatePath("/", "layout");
+  });
+}
+
+const retimeSchema = z.object({ id: z.string().min(1), start: z.coerce.date(), end: z.coerce.date().nullable() });
+
+/** Changes only an entry's times, e.g. after dragging it on the timeline. */
+export async function retimeEntry(input: z.input<typeof retimeSchema>): Promise<ActionResult> {
+  return run(async () => {
+    const data = retimeSchema.parse(input);
+    const scope = await currentScope();
+    const existing = await scope.entries.get(data.id);
+    if (!existing) throw new NotFoundError("Entry");
+    // A running entry keeps running: only its start can move, and not into the future.
+    if (existing.end === null) {
+      if (data.end !== null || data.start > new Date()) throw new Error("End must be after start");
+      await scope.entries.update(data.id, { start: data.start });
+    } else {
+      if (data.end === null) throw new Error("End must be after start");
+      await scope.entries.update(data.id, { start: data.start, end: data.end });
+    }
+    after(() => syncEntry(scope.userId, data.id));
     revalidatePath("/", "layout");
   });
 }

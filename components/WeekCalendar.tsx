@@ -6,7 +6,8 @@ import { startTimer } from "@/app/actions/entries";
 import { formatDay, formatDuration, formatTime, type DayKey } from "@/lib/time";
 import { useEntryDialog } from "./EntryDialog";
 import { AllDayStrip, ShownBox } from "./CalendarBits";
-import { blockTint, layoutLanes, planLanes, STATUS_STYLE, useDragToLog, type TimelineBlock } from "./timeline";
+import { DraggableEntry } from "./DraggableEntry";
+import { blockTint, layoutLanes, planLanes, STATUS_STYLE, useDragToLog, useEntryDrag, type TimelineBlock } from "./timeline";
 import type { AllDayDTO, CategoryDTO, EntryDTO, ShownDTO } from "./types";
 import { useNow } from "./useNow";
 
@@ -192,6 +193,14 @@ function DayColumn({
     pxPerMin: PX_PER_MIN,
     onRange: ({ start, end }) => dialog.open({ title: "", start, end, categoryId: null, plannedEventId: null }),
   });
+  // Drag an entry (or its edges) within this day to change its times; a click opens it.
+  const entryDrag = useEntryDrag({
+    pxPerMin: PX_PER_MIN,
+    min: t0,
+    max: displayEnd.getTime(),
+    now,
+    onClick: (e) => dialog.open({ ...e }),
+  });
 
   function startFromBlock(b: TimelineBlock) {
     startTransition(async () => {
@@ -279,29 +288,33 @@ function DayColumn({
         title="Click or drag to log time"
       />
       {entryLanes.map(({ item: e, lane, lanes }) => {
-        const end = entryEnd(e);
+        const { start, end } = entryDrag.times(e);
+        const minutes = (end.getTime() - start.getTime()) / 60000;
         const color = colorOf(e.categoryId);
         return (
-          <button
+          <DraggableEntry
             key={e.id}
-            className="absolute flex flex-col items-start justify-start overflow-hidden rounded border-l-[3px] px-1 py-0.5 text-left text-[10px] leading-tight hover:brightness-95"
+            entry={e}
+            drag={entryDrag}
+            className="flex flex-col items-start justify-start overflow-hidden rounded border-l-[3px] px-1 py-0.5 text-left text-[10px] leading-tight hover:brightness-95"
             style={{
-              top: y(e.start),
-              height: h(e.start, end),
+              top: y(start),
+              height: h(start, end),
               left: `calc(${(lane / lanes) * 100}% + 2px)`,
               width: `calc(${100 / lanes}% - 4px)`,
               borderColor: color,
               background: `${color}22`,
             }}
-            title={`${e.title} · ${span(e.start, e.end)} · ${formatDuration((end.getTime() - e.start.getTime()) / 60000)}${e.plannedEventId ? "" : " · unplanned"}`}
-            onClick={() => dialog.open({ ...e })}
+            title={`${e.title} · ${span(start, e.end && end)} · ${formatDuration(minutes)}${e.plannedEventId ? "" : " · unplanned"}`}
           >
             <span className="w-full truncate font-medium">
               {e.end === null && "● "}
               {e.title}
             </span>
-            <span className="w-full truncate text-muted">{formatDuration((end.getTime() - e.start.getTime()) / 60000)}</span>
-          </button>
+            <span className="w-full truncate text-muted">
+              {entryDrag.draggingId === e.id ? span(start, end) : formatDuration(minutes)}
+            </span>
+          </DraggableEntry>
         );
       })}
       {preview && (

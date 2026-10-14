@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addDays, dayBounds, dayKeyOf, displayMinutes, dragRange, formatDuration, fromLocalInput, toLocalInput, weekStart } from "@/lib/time";
+import { addDays, adjustRange, dayBounds, dayKeyOf, displayMinutes, dragRange, formatDuration, fromLocalInput, toLocalInput, weekStart } from "@/lib/time";
 
 describe("time helpers", () => {
   it("computes local day bounds across a DST change", () => {
@@ -75,6 +75,37 @@ describe("dragRange", () => {
     it("ignores items on other days", () => {
       const items: [Date, Date][] = [[at("2026-10-10T02:00:00Z"), at("2026-10-10T03:00:00Z")]];
       expect(displayMinutes("2026-10-08", items, tz, [420, 1320])).toEqual([420, 1320]);
+    });
+  });
+
+  describe("adjustRange", () => {
+    const t = (hhmm: string) => new Date(`2026-10-08T${hhmm}:00Z`);
+    const orig = { start: t("09:10"), end: t("10:40") };
+    const bounds = { min: t("07:00").getTime(), max: t("22:00").getTime() };
+    const min = (m: number) => m * 60_000;
+    const iso = (r: { start: Date; end: Date }) => [r.start.toISOString().slice(11, 16), r.end.toISOString().slice(11, 16)];
+
+    it("resizes the end, snapped to 15 minutes", () => {
+      expect(iso(adjustRange("end", orig, min(22), bounds))).toEqual(["09:10", "11:00"]);
+    });
+
+    it("resizes the start but keeps at least 15 minutes", () => {
+      expect(iso(adjustRange("start", orig, min(-25), bounds))).toEqual(["08:45", "10:40"]);
+      expect(iso(adjustRange("start", orig, min(300), bounds))).toEqual(["10:25", "10:40"]);
+    });
+
+    it("moves the whole entry, snapping its start and keeping its length", () => {
+      expect(iso(adjustRange("move", orig, min(50), bounds))).toEqual(["10:00", "11:30"]);
+    });
+
+    it("keeps moves inside the visible day", () => {
+      expect(iso(adjustRange("move", orig, min(-600), bounds))).toEqual(["07:00", "08:30"]);
+      expect(iso(adjustRange("move", orig, min(900), bounds))).toEqual(["20:30", "22:00"]);
+    });
+
+    it("leaves the entry alone for a tiny drag", () => {
+      expect(adjustRange("move", orig, min(5), bounds)).toEqual(orig);
+      expect(adjustRange("end", orig, min(-7), bounds)).toEqual(orig);
     });
   });
 });
